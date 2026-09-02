@@ -10,7 +10,7 @@ authors: [ denmeh ]
 commands:
   npctest:
     description: Spawn a Citizens NPC and drive it with a behavior tree
-    usage: /npctest <spawn|come|tree|status|remove>
+    usage: /npctest <spawn|come|tree|status|remove|arena|unarena>
     permission: npctest.use
 
 permissions:

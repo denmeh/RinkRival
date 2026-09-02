@@ -1,5 +1,7 @@
 package com.github.denmeh.npcaitest;
 
+import com.github.denmeh.npcaitest.arena.ArenaService;
+import com.github.denmeh.npcaitest.arena.PuckListener;
 import com.github.denmeh.npcaitest.command.NpcTestCommand;
 import com.github.denmeh.npcaitest.npc.TestNpcService;
 import net.citizensnpcs.api.CitizensAPI;
@@ -15,6 +17,7 @@ import java.util.logging.Level;
 public final class NpcAiTest extends JavaPlugin implements Listener {
 
     private TestNpcService npcs;
+    private ArenaService arenas;
     private boolean citizensReady;
 
     @Override
@@ -28,7 +31,9 @@ public final class NpcAiTest extends JavaPlugin implements Listener {
         }
 
         npcs = new TestNpcService(this);
+        arenas = new ArenaService(this);
         getServer().getPluginManager().registerEvents(this, this);
+        getServer().getPluginManager().registerEvents(new PuckListener(arenas), this);
 
         PluginCommand command = getCommand("npctest");
         if (command != null) {
@@ -44,6 +49,9 @@ public final class NpcAiTest extends JavaPlugin implements Listener {
 
     @Override
     public void onDisable() {
+        if (arenas != null) {
+            arenas.deleteAll();
+        }
         if (npcs != null) {
             npcs.removeAll();
         }
@@ -69,5 +77,9 @@ public final class NpcAiTest extends JavaPlugin implements Listener {
 
     public TestNpcService npcs() {
         return npcs;
+    }
+
+    public ArenaService arenas() {
+        return arenas;
     }
 }

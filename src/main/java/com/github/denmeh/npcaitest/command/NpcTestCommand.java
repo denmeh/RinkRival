@@ -1,6 +1,7 @@
 package com.github.denmeh.npcaitest.command;
 
 import com.github.denmeh.npcaitest.NpcAiTest;
+import com.github.denmeh.npcaitest.arena.ArenaService;
 import com.github.denmeh.npcaitest.npc.TestNpc;
 import com.github.denmeh.npcaitest.npc.TestNpcService;
 import org.bukkit.ChatColor;
@@ -15,7 +16,8 @@ import java.util.stream.Stream;
 
 public final class NpcTestCommand implements TabExecutor {
 
-    private static final List<String> SUBCOMMANDS = List.of("spawn", "come", "tree", "status", "remove");
+    private static final List<String> SUBCOMMANDS = List.of(
+            "spawn", "come", "tree", "status", "remove", "arena", "unarena");
 
     private final NpcAiTest plugin;
 
@@ -81,6 +83,33 @@ public final class NpcTestCommand implements TabExecutor {
                 npcs.remove(player);
                 player.sendMessage(ChatColor.GREEN + "Removed your test NPC.");
             }
+            case "arena" -> {
+                ArenaService.CreateResult result = plugin.arenas().create(player);
+                switch (result) {
+                    case ALREADY_EXISTS -> player.sendMessage(ChatColor.RED
+                            + "You already have a rink. /npctest unarena first.");
+                    case NO_SCHEMATIC -> player.sendMessage(ChatColor.RED
+                            + "Could not load plugins/NpcAiTest/arena/rink.txt — check the server log.");
+                    case CREATED_OVERLAP -> {
+                        player.sendMessage(ChatColor.GREEN + "Rink built. Knock the slime into the "
+                                + ChatColor.RED + "red" + ChatColor.GREEN + " goal. First to 3.");
+                        player.sendMessage(ChatColor.YELLOW
+                                + "Warning: this rink overlaps another player's arena.");
+                    }
+                    case CREATED -> {
+                        player.sendMessage(ChatColor.GREEN + "Rink built. Knock the slime into the "
+                                + ChatColor.RED + "red" + ChatColor.GREEN + " goal. First to 3.");
+                        player.sendMessage(ChatColor.GRAY + "Rival is idle. /npctest unarena restores the blocks.");
+                    }
+                }
+            }
+            case "unarena" -> {
+                if (!plugin.arenas().delete(player)) {
+                    player.sendMessage(ChatColor.RED + "No rink to remove. /npctest arena first.");
+                    return true;
+                }
+                player.sendMessage(ChatColor.GREEN + "Rink removed and blocks restored.");
+            }
             default -> sendUsage(player);
         }
         return true;
@@ -101,5 +130,7 @@ public final class NpcTestCommand implements TabExecutor {
         player.sendMessage(ChatColor.GOLD + "/npctest tree" + ChatColor.GRAY + " — FOLLOW vs IDLE behavior tree");
         player.sendMessage(ChatColor.GOLD + "/npctest status" + ChatColor.GRAY + " — print the active node");
         player.sendMessage(ChatColor.GOLD + "/npctest remove" + ChatColor.GRAY + " — despawn it");
+        player.sendMessage(ChatColor.GOLD + "/npctest arena" + ChatColor.GRAY + " — paste a small ice rink vs idle Rival");
+        player.sendMessage(ChatColor.GOLD + "/npctest unarena" + ChatColor.GRAY + " — restore blocks and despawn the rink");
     }
 }

@@ -1,0 +1,76 @@
+# Hockey rink schematic (bottom layer first).
+# Edit plugins/NpcAiTest/arena/rink.txt then /npctest unarena and /npctest arena.
+#
+# i packed ice   w white concrete   b blue goal frame   r red goal frame
+# . air   P player spawn   N rival spawn   O puck spawn
+# g player net (you concede here)   e enemy net (you score here)
+# First row is the near/blue end. Layers are separated by a blank line.
+
+LAYER 0
+iiiiiiiiiii
+iiiiiiiiiii
+iiiiiiiiiii
+iiiiiiiiiii
+iiiiiiiiiii
+iiiiiiiiiii
+iiiiiiiiiii
+iiiiiiiiiii
+iiiiiiiiiii
+iiiiiiiiiii
+iiiiiiiiiii
+iiiiiiiiiii
+iiiiiiiiiii
+iiiiiiiiiii
+iiiiiiiiiii
+iiiiiiiiiii
+iiiiiiiiiii
+iiiiiiiiiii
+iiiiiiiiiii
+iiiiiiiiiii
+iiiiiiiiiii
+
+LAYER 1
+wwwwbbbwwww
+bbbbgggbbbb
+w.........w
+w.........w
+w....P....w
+w.........w
+w.........w
+w.........w
+w.........w
+w.........w
+w....O....w
+w.........w
+w.........w
+w.........w
+w.........w
+w.........w
+w....N....w
+w.........w
+w.........w
+rrrreeerrrr
+wwwwrrrwwww
+
+LAYER 2
+wwwwbbbwwww
+bbbbgggbbbb
+w.........w
+w.........w
+w.........w
+w.........w
+w.........w
+w.........w
+w.........w
+w.........w
+w.........w
+w.........w
+w.........w
+w.........w
+w.........w
+w.........w
+w.........w
+w.........w
+w.........w
+rrrreeerrrr
+wwwwrrrwwww
