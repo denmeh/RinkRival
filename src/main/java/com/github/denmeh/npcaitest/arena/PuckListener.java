@@ -11,14 +11,8 @@ import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.entity.EntityTargetEvent;
 import org.bukkit.event.entity.SlimeSplitEvent;
-import org.bukkit.event.player.PlayerInteractEntityEvent;
-import org.bukkit.inventory.EquipmentSlot;
-import org.bukkit.util.Vector;
 
 public final class PuckListener implements Listener {
-
-    private static final double KNOCKBACK = 0.75;
-    private static final double KNOCKBACK_Y = 0.12;
 
     private final ArenaService arenas;
 
@@ -26,29 +20,31 @@ public final class PuckListener implements Listener {
         this.arenas = arenas;
     }
 
-    @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
     public void onPuckDamage(EntityDamageEvent event) {
         if (!(event.getEntity() instanceof Slime slime) || !arenas.isPuck(slime)) {
             return;
         }
+        if (isPlayerMelee(event)) {
+            if (event.getDamage() <= 0) {
+                event.setDamage(0.01);
+            }
+            return;
+        }
         event.setCancelled(true);
         event.setDamage(0);
-        ArenaService.protectPuck(slime);
-        if (event instanceof EntityDamageByEntityEvent by && by.getDamager() instanceof Player player) {
-            knock(slime, player);
-        }
     }
 
-    @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
-    public void onPuckClick(PlayerInteractEntityEvent event) {
-        if (event.getHand() != EquipmentSlot.HAND) {
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void afterPlayerHit(EntityDamageByEntityEvent event) {
+        if (!(event.getEntity() instanceof Slime slime) || !arenas.isPuck(slime)) {
             return;
         }
-        if (!(event.getRightClicked() instanceof Slime slime) || !arenas.isPuck(slime)) {
+        if (!(event.getDamager() instanceof Player)) {
             return;
         }
-        event.setCancelled(true);
-        knock(slime, event.getPlayer());
+        slime.setHealth(slime.getMaxHealth());
+        Puck.protect(slime);
     }
 
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
@@ -83,12 +79,7 @@ public final class PuckListener implements Listener {
         }
     }
 
-    private static void knock(Slime slime, Player player) {
-        Vector direction = player.getLocation().getDirection();
-        direction.setY(0);
-        if (direction.lengthSquared() < 1.0E-4) {
-            return;
-        }
-        slime.setVelocity(direction.normalize().multiply(KNOCKBACK).setY(KNOCKBACK_Y));
+    private static boolean isPlayerMelee(EntityDamageEvent event) {
+        return event instanceof EntityDamageByEntityEvent by && by.getDamager() instanceof Player;
     }
 }

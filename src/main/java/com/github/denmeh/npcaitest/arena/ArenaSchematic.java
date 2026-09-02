@@ -46,7 +46,10 @@ public final class ArenaSchematic {
             plugin.saveResource(RESOURCE, false);
         }
         try {
-            return parse(Files.readString(file, StandardCharsets.UTF_8));
+            ArenaSchematic parsed = parse(Files.readString(file, StandardCharsets.UTF_8));
+            plugin.getLogger().info("Loaded rink " + parsed.width() + "x" + parsed.length() + "x"
+                    + parsed.height() + " from " + file.toAbsolutePath());
+            return parsed;
         } catch (IOException | IllegalArgumentException exception) {
             plugin.getLogger().log(Level.SEVERE, "Failed to load " + RESOURCE, exception);
             return null;

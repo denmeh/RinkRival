@@ -1,5 +1,6 @@
 package com.github.denmeh.npcaitest;
 
+import com.github.denmeh.npcaitest.arena.ArenaListener;
 import com.github.denmeh.npcaitest.arena.ArenaService;
 import com.github.denmeh.npcaitest.arena.PuckListener;
 import com.github.denmeh.npcaitest.command.NpcTestCommand;
@@ -34,6 +35,7 @@ public final class NpcAiTest extends JavaPlugin implements Listener {
         arenas = new ArenaService(this);
         getServer().getPluginManager().registerEvents(this, this);
         getServer().getPluginManager().registerEvents(new PuckListener(arenas), this);
+        getServer().getPluginManager().registerEvents(new ArenaListener(arenas), this);
 
         PluginCommand command = getCommand("npctest");
         if (command != null) {
@@ -50,7 +52,7 @@ public final class NpcAiTest extends JavaPlugin implements Listener {
     @Override
     public void onDisable() {
         if (arenas != null) {
-            arenas.deleteAll();
+            arenas.leaveAll();
         }
         if (npcs != null) {
             npcs.removeAll();

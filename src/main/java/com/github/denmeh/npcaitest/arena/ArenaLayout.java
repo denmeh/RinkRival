@@ -1,6 +1,7 @@
 package com.github.denmeh.npcaitest.arena;
 
 import org.bukkit.Location;
+import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.BlockFace;
 import org.bukkit.entity.Player;
@@ -195,6 +196,6 @@ public final class ArenaLayout {
         return BlockFace.EAST;
     }
 
-    public record BlockCell(int x, int y, int z, org.bukkit.Material material) {
+    public record BlockCell(int x, int y, int z, Material material) {
     }
 }

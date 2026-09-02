@@ -15,17 +15,20 @@ public final class Arena {
 
     private final UUID ownerId;
     private final ArenaLayout layout;
-    private final List<ArenaBuilder.SavedBlock> original;
+    private final List<ArenaBuilder.SavedBlock> originalBlocks;
+    private final PlayerSnapshot ownerSnapshot;
     private final TestNpc rival;
     private Slime puck;
     private int playerScore;
     private int enemyScore;
     private int scoreCooldown;
 
-    Arena(UUID ownerId, ArenaLayout layout, List<ArenaBuilder.SavedBlock> original, TestNpc rival, Slime puck) {
+    Arena(UUID ownerId, ArenaLayout layout, List<ArenaBuilder.SavedBlock> originalBlocks,
+            PlayerSnapshot ownerSnapshot, TestNpc rival, Slime puck) {
         this.ownerId = ownerId;
         this.layout = layout;
-        this.original = original;
+        this.originalBlocks = originalBlocks;
+        this.ownerSnapshot = ownerSnapshot;
         this.rival = rival;
         this.puck = puck;
     }
@@ -36,6 +39,10 @@ public final class Arena {
 
     public ArenaLayout layout() {
         return layout;
+    }
+
+    public PlayerSnapshot ownerSnapshot() {
+        return ownerSnapshot;
     }
 
     public TestNpc rival() {
@@ -104,8 +111,8 @@ public final class Arena {
         puck.setFallDistance(0);
     }
 
-    List<ArenaBuilder.SavedBlock> original() {
-        return original;
+    List<ArenaBuilder.SavedBlock> originalBlocks() {
+        return originalBlocks;
     }
 
     NPC npc() {
