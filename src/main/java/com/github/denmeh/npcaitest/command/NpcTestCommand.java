@@ -91,11 +91,12 @@ public final class NpcTestCommand implements TabExecutor {
                     case NO_SCHEMATIC -> player.sendMessage(ChatColor.RED
                             + "Could not load plugins/NpcAiTest/arena/rink.txt — check the server log.");
                     case CREATED_OVERLAP -> {
-                        sendArenaReady(player);
+                        player.sendMessage(ChatColor.GRAY + "Building rink in the background (no lag spike)...");
                         player.sendMessage(ChatColor.YELLOW
                                 + "Warning: this rink overlaps another player's arena.");
                     }
-                    case CREATED -> sendArenaReady(player);
+                    case CREATED -> player.sendMessage(ChatColor.GRAY
+                            + "Building rink in the background. You will teleport in when it is ready.");
                 }
             }
             case "unarena", "leave" -> {
@@ -127,10 +128,5 @@ public final class NpcTestCommand implements TabExecutor {
         player.sendMessage(ChatColor.GOLD + "/npctest remove" + ChatColor.GRAY + " — despawn it");
         player.sendMessage(ChatColor.GOLD + "/npctest arena" + ChatColor.GRAY + " — paste an ice rink vs idle Rival");
         player.sendMessage(ChatColor.GOLD + "/npctest leave" + ChatColor.GRAY + " — restore you and the world (or use the barrier)");
-    }
-
-    private static void sendArenaReady(Player player) {
-        player.sendMessage(ChatColor.GREEN + "Rink ready. Hotbar: KB1, KB2, and Leave on the last slot.");
-        player.sendMessage(ChatColor.GRAY + "Left-click the puck. First to 3. Leaving restores inventory, gamemode and location.");
     }
 }

@@ -35,6 +35,9 @@ public final class RivalNpc {
     }
 
     public static void destroy(NPC npc) {
+        if (npc == null) {
+            return;
+        }
         if (npc.getNavigator().isNavigating()) {
             npc.getNavigator().cancelNavigation();
         }

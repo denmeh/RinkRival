@@ -2,9 +2,11 @@ package com.github.denmeh.npcaitest.arena;
 
 import com.github.denmeh.npcaitest.npc.TestNpc;
 import net.citizensnpcs.api.npc.NPC;
-import org.bukkit.entity.Slime;
+import org.bukkit.entity.Turtle;
+import org.bukkit.scheduler.BukkitTask;
 import org.bukkit.util.Vector;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -15,22 +17,20 @@ public final class Arena {
 
     private final UUID ownerId;
     private final ArenaLayout layout;
-    private final List<ArenaBuilder.SavedBlock> originalBlocks;
     private final PlayerSnapshot ownerSnapshot;
-    private final TestNpc rival;
-    private Slime puck;
+    private final List<ArenaBuilder.SavedBlock> originalBlocks = new ArrayList<>();
+    private TestNpc rival;
+    private Turtle puck;
+    private BukkitTask worldTask;
+    private boolean ready;
     private int playerScore;
     private int enemyScore;
     private int scoreCooldown;
 
-    Arena(UUID ownerId, ArenaLayout layout, List<ArenaBuilder.SavedBlock> originalBlocks,
-            PlayerSnapshot ownerSnapshot, TestNpc rival, Slime puck) {
+    Arena(UUID ownerId, ArenaLayout layout, PlayerSnapshot ownerSnapshot) {
         this.ownerId = ownerId;
         this.layout = layout;
-        this.originalBlocks = originalBlocks;
         this.ownerSnapshot = ownerSnapshot;
-        this.rival = rival;
-        this.puck = puck;
     }
 
     public UUID ownerId() {
@@ -45,11 +45,15 @@ public final class Arena {
         return ownerSnapshot;
     }
 
+    public boolean ready() {
+        return ready;
+    }
+
     public TestNpc rival() {
         return rival;
     }
 
-    public Slime puck() {
+    public Turtle puck() {
         return puck;
     }
 
@@ -72,7 +76,7 @@ public final class Arena {
     }
 
     boolean canScore() {
-        return scoreCooldown <= 0;
+        return ready && scoreCooldown <= 0;
     }
 
     void playerScored() {
@@ -98,7 +102,7 @@ public final class Arena {
         enemyScore = 0;
     }
 
-    void replacePuck(Slime next) {
+    void replacePuck(Turtle next) {
         this.puck = next;
     }
 
@@ -111,11 +115,36 @@ public final class Arena {
         puck.setFallDistance(0);
     }
 
+    void setWorldTask(BukkitTask worldTask) {
+        this.worldTask = worldTask;
+    }
+
+    void cancelWorldTask() {
+        if (worldTask != null) {
+            worldTask.cancel();
+            worldTask = null;
+        }
+    }
+
+    void finishBuild(List<ArenaBuilder.SavedBlock> original, TestNpc rival, Turtle puck) {
+        originalBlocks.clear();
+        originalBlocks.addAll(original);
+        this.rival = rival;
+        this.puck = puck;
+        this.ready = true;
+        this.worldTask = null;
+    }
+
+    void setOriginalBlocks(List<ArenaBuilder.SavedBlock> original) {
+        originalBlocks.clear();
+        originalBlocks.addAll(original);
+    }
+
     List<ArenaBuilder.SavedBlock> originalBlocks() {
         return originalBlocks;
     }
 
     NPC npc() {
-        return rival.npc();
+        return rival == null ? null : rival.npc();
     }
 }

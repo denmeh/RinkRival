@@ -34,11 +34,11 @@ Leaves extend `BehaviorGoalAdapter` and return `RUNNING` / `SUCCESS` / `FAILURE`
 - Sets **adventure**
 - Gives **Knockback I / II** sticks in hotbar slots 1–2
 - Puts **Leave Arena** (barrier) in the **last hotbar slot**
-- Spawns a slime puck and an idle Rival
+- Spawns a turtle puck and an idle Rival
 
-Left-click the puck with a stick. Score in the **red** net; first to 3. Leave with the barrier, `/npctest leave`, or quit: world blocks and your previous state are restored.
+Left-click the turtle with a stick. Score in the **red** net; first to 3. Leave with the barrier, `/npctest leave`, or quit: world blocks and your previous state are restored.
 
-Layout lives in `plugins/NpcAiTest/arena/rink.txt` (copied from the jar on first run). Delete that file and reload to reset the bundled 21×42 rink. Legend is in the file header (`i` ice, `w` walls, `P`/`N`/`O` spawns, `g`/`e` nets).
+The rink is pasted in **small batches each tick** (~192 blocks) so the build does not hitch the server. Layout lives in `plugins/NpcAiTest/arena/rink.txt`. Delete that file and reload to reset the bundled **19×33** 1v1 rink (packed/blue ice only — no melting ice or water).
 
 ## Commands
 

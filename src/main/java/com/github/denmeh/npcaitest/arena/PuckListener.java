@@ -1,16 +1,16 @@
 package com.github.denmeh.npcaitest.arena;
 
 import org.bukkit.entity.Player;
-import org.bukkit.entity.Slime;
+import org.bukkit.entity.Turtle;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.entity.EntityChangeBlockEvent;
 import org.bukkit.event.entity.EntityCombustEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.entity.EntityTargetEvent;
-import org.bukkit.event.entity.SlimeSplitEvent;
 
 public final class PuckListener implements Listener {
 
@@ -22,7 +22,7 @@ public final class PuckListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
     public void onPuckDamage(EntityDamageEvent event) {
-        if (!(event.getEntity() instanceof Slime slime) || !arenas.isPuck(slime)) {
+        if (!(event.getEntity() instanceof Turtle turtle) || !arenas.isPuck(turtle)) {
             return;
         }
         if (isPlayerMelee(event)) {
@@ -37,19 +37,19 @@ public final class PuckListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void afterPlayerHit(EntityDamageByEntityEvent event) {
-        if (!(event.getEntity() instanceof Slime slime) || !arenas.isPuck(slime)) {
+        if (!(event.getEntity() instanceof Turtle turtle) || !arenas.isPuck(turtle)) {
             return;
         }
         if (!(event.getDamager() instanceof Player)) {
             return;
         }
-        slime.setHealth(slime.getMaxHealth());
-        Puck.protect(slime);
+        turtle.setHealth(turtle.getMaxHealth());
+        Puck.protect(turtle);
     }
 
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
     public void onPuckDeath(EntityDeathEvent event) {
-        if (!(event.getEntity() instanceof Slime slime) || !arenas.isPuck(slime)) {
+        if (!(event.getEntity() instanceof Turtle turtle) || !arenas.isPuck(turtle)) {
             return;
         }
         event.getDrops().clear();
@@ -57,10 +57,9 @@ public final class PuckListener implements Listener {
     }
 
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
-    public void onPuckSplit(SlimeSplitEvent event) {
+    public void onPuckDig(EntityChangeBlockEvent event) {
         if (arenas.isPuck(event.getEntity())) {
             event.setCancelled(true);
-            event.setCount(0);
         }
     }
 

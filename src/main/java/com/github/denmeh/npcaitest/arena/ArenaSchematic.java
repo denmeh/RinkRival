@@ -44,6 +44,16 @@ public final class ArenaSchematic {
         Path file = plugin.getDataFolder().toPath().resolve(RESOURCE);
         if (!Files.exists(file)) {
             plugin.saveResource(RESOURCE, false);
+        } else {
+            try {
+                ArenaSchematic existing = parse(Files.readString(file, StandardCharsets.UTF_8));
+                if (existing.width() > 22 || existing.length() > 36) {
+                    plugin.getLogger().info("Replacing oversized rink schematic with the bundled 19x33 1v1 layout");
+                    plugin.saveResource(RESOURCE, true);
+                }
+            } catch (IOException | IllegalArgumentException ignored) {
+                plugin.saveResource(RESOURCE, true);
+            }
         }
         try {
             ArenaSchematic parsed = parse(Files.readString(file, StandardCharsets.UTF_8));
@@ -108,15 +118,7 @@ public final class ArenaSchematic {
                 for (int x = 0; x < width; x++) {
                     char glyph = row.charAt(x);
                     Cell cell = new Cell(x, y, z);
-                    Material material = switch (glyph) {
-                        case 'i' -> Material.PACKED_ICE;
-                        case 'w' -> Material.WHITE_CONCRETE;
-                        case 'b' -> Material.BLUE_CONCRETE;
-                        case 'r' -> Material.RED_CONCRETE;
-                        case '.', 'P', 'N', 'O', 'g', 'e' -> Material.AIR;
-                        default -> throw new IllegalArgumentException(
-                                "unknown schematic char '" + glyph + "' at layer " + y + " row " + z + " col " + x);
-                    };
+                    Material material = materialFor(glyph, y, z, x);
                     voxels.add(new Voxel(x, y, z, material));
                     switch (glyph) {
                         case 'P' -> playerSpawn = requireUnique(playerSpawn, cell, "P");
@@ -137,6 +139,26 @@ public final class ArenaSchematic {
             throw new IllegalArgumentException("schematic must mark g (player net) and e (enemy net)");
         }
         return new ArenaSchematic(width, height, length, voxels, playerSpawn, npcSpawn, puckSpawn, playerGoal, enemyGoal);
+    }
+
+    private static Material materialFor(char glyph, int y, int z, int x) {
+        return switch (glyph) {
+            case 'f', 'i' -> Material.PACKED_ICE;
+            case 'z' -> Material.BLUE_ICE;
+            case 'w' -> Material.WHITE_CONCRETE;
+            case 'q' -> Material.QUARTZ_BLOCK;
+            case 'n' -> Material.LIGHT_BLUE_CONCRETE;
+            case 'k' -> Material.RED_TERRACOTTA;
+            case 'b' -> Material.BLUE_CONCRETE;
+            case 'r' -> Material.RED_CONCRETE;
+            case 'm' -> Material.SEA_LANTERN;
+            case 'y' -> Material.LIGHT_BLUE_STAINED_GLASS;
+            case 'h' -> Material.BLUE_STAINED_GLASS;
+            case 'j' -> Material.RED_STAINED_GLASS;
+            case '.', 'P', 'N', 'O', 'g', 'e' -> Material.AIR;
+            default -> throw new IllegalArgumentException(
+                    "unknown schematic char '" + glyph + "' at layer " + y + " row " + z + " col " + x);
+        };
     }
 
     private static Cell requireUnique(Cell existing, Cell next, String name) {

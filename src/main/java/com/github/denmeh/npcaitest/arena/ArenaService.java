@@ -1,14 +1,14 @@
 package com.github.denmeh.npcaitest.arena;
 
 import com.github.denmeh.npcaitest.NpcAiTest;
-import com.github.denmeh.npcaitest.npc.TestNpc;
 import org.bukkit.ChatColor;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
-import org.bukkit.entity.Slime;
+import org.bukkit.entity.Turtle;
 import org.bukkit.scheduler.BukkitTask;
 
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -42,10 +42,10 @@ public final class ArenaService {
     }
 
     public boolean isPuck(org.bukkit.entity.Entity entity) {
-        if (!(entity instanceof Slime slime)) {
+        if (!(entity instanceof Turtle turtle)) {
             return false;
         }
-        UUID id = slime.getUniqueId();
+        UUID id = turtle.getUniqueId();
         for (Arena arena : byOwner.values()) {
             if (arena.isPuck(id)) {
                 return true;
@@ -64,13 +64,11 @@ public final class ArenaService {
         PlayerSnapshot snapshot = PlayerSnapshot.capture(player);
         ArenaLayout layout = ArenaLayout.place(schematic, player);
         boolean overlaps = byOwner.values().stream().anyMatch(arena -> arena.layout().overlaps(layout));
-        var originalBlocks = ArenaBuilder.snapshotAndBuild(layout);
-        TestNpc rival = RivalNpc.spawn(player.getUniqueId(), layout);
-        Slime puck = spawnPuck(layout);
-        Arena arena = new Arena(player.getUniqueId(), layout, originalBlocks, snapshot, rival, puck);
+        Arena arena = new Arena(player.getUniqueId(), layout, snapshot);
         byOwner.put(player.getUniqueId(), arena);
-        kit.equip(player);
-        player.teleport(layout.playerSpawn());
+        BukkitTask paste = ArenaBuilder.paste(plugin, layout, arena::setOriginalBlocks,
+                original -> completeCreate(player.getUniqueId(), layout.world(), original));
+        arena.setWorldTask(paste);
         startTick();
         return overlaps ? CreateResult.CREATED_OVERLAP : CreateResult.CREATED;
     }
@@ -80,7 +78,7 @@ public final class ArenaService {
         if (arena == null) {
             return false;
         }
-        teardown(arena, player);
+        teardown(arena, player, false);
         if (byOwner.isEmpty()) {
             stopTick();
         }
@@ -88,18 +86,43 @@ public final class ArenaService {
     }
 
     public void leaveAll() {
-        byOwner.forEach((ownerId, arena) -> {
-            Player owner = plugin.getServer().getPlayer(ownerId);
-            teardown(arena, owner);
-        });
+        byOwner.forEach((ownerId, arena) -> teardown(arena, plugin.getServer().getPlayer(ownerId), true));
         byOwner.clear();
         stopTick();
     }
 
-    private void teardown(Arena arena, Player owner) {
+    private void completeCreate(UUID ownerId, World world, List<ArenaBuilder.SavedBlock> original) {
+        Arena arena = byOwner.get(ownerId);
+        if (arena == null) {
+            ArenaBuilder.restoreLater(plugin, world, original);
+            return;
+        }
+        Player player = plugin.getServer().getPlayer(ownerId);
+        if (player == null || !player.isOnline()) {
+            byOwner.remove(ownerId);
+            ArenaBuilder.restoreLater(plugin, arena.layout().world(), original);
+            if (byOwner.isEmpty()) {
+                stopTick();
+            }
+            return;
+        }
+        arena.setOriginalBlocks(original);
+        kit.equip(player);
+        player.teleport(arena.layout().playerSpawn());
+        arena.finishBuild(original, RivalNpc.spawn(ownerId, arena.layout()), spawnPuck(arena.layout()));
+        player.sendMessage(ChatColor.GREEN + "Rink ready. Hotbar: KB1, KB2, and Leave on the last slot.");
+        player.sendMessage(ChatColor.GRAY + "Left-click the puck. First to 3. Leaving restores inventory, gamemode and location.");
+    }
+
+    private void teardown(Arena arena, Player owner, boolean immediate) {
+        arena.cancelWorldTask();
         removePuck(arena.puck());
         RivalNpc.destroy(arena.npc());
-        ArenaBuilder.restore(arena.layout().world(), arena.originalBlocks());
+        if (immediate) {
+            ArenaBuilder.restoreNow(arena.layout().world(), arena.originalBlocks());
+        } else {
+            ArenaBuilder.restoreLater(plugin, arena.layout().world(), arena.originalBlocks());
+        }
         if (owner != null && owner.isOnline()) {
             arena.ownerSnapshot().restore(owner);
         }
@@ -124,8 +147,11 @@ public final class ArenaService {
     }
 
     private void tickArena(Arena arena) {
+        if (!arena.ready()) {
+            return;
+        }
         arena.tickCooldown((int) TICK_PERIOD);
-        Slime puck = ensurePuck(arena);
+        Turtle puck = ensurePuck(arena);
         if (puck == null) {
             return;
         }
@@ -171,24 +197,24 @@ public final class ArenaService {
         }
     }
 
-    private Slime ensurePuck(Arena arena) {
-        Slime puck = arena.puck();
+    private Turtle ensurePuck(Arena arena) {
+        Turtle puck = arena.puck();
         if (puck != null && puck.isValid() && !puck.isDead()) {
             Puck.protect(puck);
             return puck;
         }
         removePuck(puck);
-        Slime next = spawnPuck(arena.layout());
+        Turtle next = spawnPuck(arena.layout());
         arena.replacePuck(next);
         return next;
     }
 
-    private Slime spawnPuck(ArenaLayout layout) {
+    private Turtle spawnPuck(ArenaLayout layout) {
         World world = layout.world();
-        return world.spawn(layout.puckSpawn(), Slime.class, Puck::style);
+        return world.spawn(layout.puckSpawn(), Turtle.class, Puck::style);
     }
 
-    private void removePuck(Slime puck) {
+    private void removePuck(Turtle puck) {
         if (puck != null && puck.isValid()) {
             puck.remove();
         }
