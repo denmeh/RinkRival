@@ -1,3 +1,6 @@
+# Cursor (local rules/docs)
+.cursor/
+
 # Maven
 target/
 

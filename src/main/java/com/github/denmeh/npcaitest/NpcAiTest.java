@@ -19,6 +19,7 @@ public final class NpcAiTest extends JavaPlugin implements Listener {
 
     @Override
     public void onEnable() {
+
         Plugin citizens = getServer().getPluginManager().getPlugin("Citizens");
         if (citizens == null || !citizens.isEnabled()) {
             getLogger().log(Level.SEVERE, "Citizens 2.0 not found or not enabled");
