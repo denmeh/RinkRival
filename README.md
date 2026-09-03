@@ -2,7 +2,7 @@
 
 A Paper/Spigot sandbox for **Citizens NPC AI**, focused on the Citizens **behavior tree** API (`net.citizensnpcs.api.ai.tree`). It is not GOAP. Citizens “Goal” is a priority scheduler; new NPC logic should be `Behavior` nodes composed with `Sequence`, `Selector`, and `IfElse`.
 
-The ice rink is a second test bed: a temporary hockey minigame. **Rival plays with a behavior tree** — four roles on the `GoalController` (body check, guard net, attack, idle), with a `Sequence` inside the attack role. You score in the **red** net; Rival scores in the **blue** net.
+The ice rink is a second test bed: a temporary hockey minigame. **Rival plays with a behavior tree** — a small reactive tree written for this project ([`bt`](src/main/java/com/github/denmeh/npcaitest/bt)) and hosted inside a single Citizens goal, because Citizens' own `Selector` cannot interrupt a running child. You score in the **red** net; Rival scores in the **blue** net.
 
 ## Requirements
 
@@ -27,7 +27,9 @@ Drop `target/NpcAiTest-1.0-SNAPSHOT.jar` into `plugins/` next to Citizens.
 
 Leaves extend `BehaviorGoalAdapter` and return `RUNNING` / `SUCCESS` / `FAILURE`. Pathfinding uses `Navigator.setTarget` once, not every tick.
 
-Full write-up with diagrams: [docs/behavior-tree.md](docs/behavior-tree.md).
+That command still uses Citizens' stock API; the Rival does not. Every precondition on the Rival is a `Guard` node re-checked each tick instead of a `shouldExecute()` consulted once, cooldowns and give-up timers are decorators instead of leaf fields, and the tree reports its own live branch (`rival>defend>GUARD_NET`) to `/npctest status`.
+
+Full write-up with diagrams, including why the stock `Selector` was not enough: [docs/behavior-tree.md](docs/behavior-tree.md).
 
 ## Ice rink
 
@@ -44,14 +46,18 @@ A match runs as a small state machine: **faceoff** (3-2-1 countdown, both skater
 
 The puck plays like a puck rather than a mob: your hits are scaled up past vanilla knockback, and it **rebounds off the boards** instead of stopping dead against them, since Minecraft entities do not bounce on their own. The bounce planes come from the schematic's open ice, with the net mouths excluded so shots can still go in.
 
-Rival’s tree (registered on spawn, no LookClose):
+Rival’s tree (registered on spawn, no LookClose). The `Selector` retries from the top every tick, so a branch becoming available interrupts a lower one mid-skate:
 
-| Priority | Node | When it runs |
-|---|---|---|
-| 4 | `BodyCheck` | You are carrying the puck and he is within 5 blocks |
-| 3 | `GuardNet` | You are carrying the puck at his end |
-| 2 | `Sequence(ChaseToIntercept, StrikeTowardGoal)` | Live play and the puck is alive |
-| 1 | `IdleBehavior` | Otherwise, including faceoffs |
+```
+Selector "rival"
+├── Guard "check"   you are on the puck, he is close, puck out of his reach
+│   └── Cooldown 5.2s → Timeout 40t → BodyCheck
+├── Guard "defend"  you are on the puck at his end
+│   └── GuardNet
+├── Guard "attack"  live play, puck alive
+│   └── Sequence "rush" → ChaseToIntercept → StrikeTowardGoal
+└── Hold            stand still, including during faceoffs
+```
 
 `ChaseToIntercept` **leads the puck**: it simulates the slide forward and skates to the first spot it can actually reach, either behind the puck (attack) or between the puck and the red net (defend). `StrikeTowardGoal` circles the puck until it can shoot forward, then swings — unless you are right on top of him, in which case he shoots straight away rather than get stripped. Each shot is re-rolled: a different spot inside your net, different power, and Knockback **I** for close taps or **II** for long clears.
 

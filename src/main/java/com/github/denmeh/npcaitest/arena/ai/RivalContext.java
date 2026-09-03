@@ -52,7 +52,6 @@ public final class RivalContext {
     private static final double GOALIE_DEPTH = 3.2;
     private static final double SHOVE_POWER = 0.62;
     private static final double SHOVE_LIFT = 0.34;
-    private static final long BODY_CHECK_COOLDOWN_MS = 5200L;
     /** With the player breathing down its neck the rival shoots rather than keep circling. */
     private static final double PRESSURE_RANGE = 3.2;
 
@@ -63,7 +62,6 @@ public final class RivalContext {
     private final Random random = new Random();
 
     private long nextStrikeAt;
-    private long nextBodyCheckAt;
     private int hopCooldown;
     private Location lookFocus;
     private Float lookYaw;
@@ -168,18 +166,8 @@ public final class RivalContext {
         return clampToPlayable(post);
     }
 
-    public boolean bodyCheckReady() {
-        return System.currentTimeMillis() >= nextBodyCheckAt;
-    }
-
-    /** Starts the cooldown whether or not the check landed, so a missed charge is not retried instantly. */
-    public void markBodyCheck() {
-        nextBodyCheckAt = System.currentTimeMillis() + BODY_CHECK_COOLDOWN_MS;
-    }
-
     /** A shove, not an attack: knocks the player off the puck without touching their health. */
     public void shove(Player target) {
-        markBodyCheck();
         if (!spawned()) {
             return;
         }

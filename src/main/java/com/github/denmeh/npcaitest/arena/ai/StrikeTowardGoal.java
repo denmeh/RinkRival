@@ -1,10 +1,13 @@
 package com.github.denmeh.npcaitest.arena.ai;
 
-import net.citizensnpcs.api.ai.tree.BehaviorGoalAdapter;
-import net.citizensnpcs.api.ai.tree.BehaviorStatus;
+import com.github.denmeh.npcaitest.bt.Leaf;
+import com.github.denmeh.npcaitest.bt.Status;
 import org.bukkit.entity.Player;
 
-public final class StrikeTowardGoal extends BehaviorGoalAdapter {
+/**
+ * Circles until the puck is between the rival and the net, then swings.
+ */
+public final class StrikeTowardGoal extends Leaf {
 
     /**
      * A puck pinned against the boards can never be lined up; shoot anyway rather than circling forever.
@@ -17,40 +20,42 @@ public final class StrikeTowardGoal extends BehaviorGoalAdapter {
     private int orbitTicks;
 
     public StrikeTowardGoal(RivalContext ctx) {
+        super("STRIKE");
         this.ctx = ctx;
     }
 
     @Override
-    public void reset() {
-        orbitTicks = 0;
-        ctx.planShot();
-    }
-
-    @Override
-    public BehaviorStatus run() {
-        if (!ctx.playable() || !ctx.spawned() || !ctx.puckAlive() || !ctx.inStrikeRange()) {
-            return BehaviorStatus.FAILURE;
+    public Status tick() {
+        if (!ctx.inStrikeRange()) {
+            return done(Status.FAILURE);
         }
         ctx.cancelNavigation();
         if (!ctx.linedUp() && !ctx.pressured() && orbitTicks++ < ORBIT_LIMIT_TICKS) {
-            ctx.rival().setActiveNode("SKATE_AROUND");
+            phase("SKATE_AROUND");
             ctx.tickOrbit();
-            return BehaviorStatus.RUNNING;
+            return Status.RUNNING;
         }
-        ctx.rival().setActiveNode("STRIKE");
+        phase("STRIKE");
         ctx.faceShot();
         if (!ctx.strikeReady()) {
-            return BehaviorStatus.RUNNING;
+            return Status.RUNNING;
         }
         if (!(ctx.npc().getEntity() instanceof Player player)) {
-            return BehaviorStatus.FAILURE;
+            return done(Status.FAILURE);
         }
         ctx.hitPuck(player);
-        return BehaviorStatus.SUCCESS;
+        return done(Status.SUCCESS);
     }
 
     @Override
-    public boolean shouldExecute() {
-        return ctx.playable() && ctx.spawned() && ctx.puckAlive() && ctx.inStrikeRange();
+    public void abort() {
+        done(Status.FAILURE);
+    }
+
+    /** Every shot gets a fresh plan: new aim, new power, new stick, new way round the puck. */
+    private Status done(Status status) {
+        orbitTicks = 0;
+        ctx.planShot();
+        return status;
     }
 }

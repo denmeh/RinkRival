@@ -1,38 +1,35 @@
 package com.github.denmeh.npcaitest.arena.ai;
 
-import net.citizensnpcs.api.ai.tree.BehaviorGoalAdapter;
-import net.citizensnpcs.api.ai.tree.BehaviorStatus;
+import com.github.denmeh.npcaitest.bt.Leaf;
+import com.github.denmeh.npcaitest.bt.Status;
 
-public final class ChaseToIntercept extends BehaviorGoalAdapter {
+/**
+ * Skates to where the puck is going. Succeeds once the puck is in range, which is what advances the
+ * attack sequence to the swing.
+ */
+public final class ChaseToIntercept extends Leaf {
 
     private final RivalContext ctx;
     private final SkateTo skate = new SkateTo();
 
     public ChaseToIntercept(RivalContext ctx) {
+        super("CHASE");
         this.ctx = ctx;
     }
 
     @Override
-    public void reset() {
-        skate.reset();
-    }
-
-    @Override
-    public BehaviorStatus run() {
-        if (!ctx.playable() || !ctx.spawned() || !ctx.puckAlive()) {
-            return BehaviorStatus.FAILURE;
-        }
-        ctx.rival().setActiveNode(ctx.chaseLabel());
+    public Status tick() {
+        phase(ctx.chaseLabel());
         ctx.tickChaseMovement();
         if (ctx.inStrikeRange()) {
-            return BehaviorStatus.SUCCESS;
+            return Status.SUCCESS;
         }
         skate.moveTo(ctx, ctx.intercept());
-        return BehaviorStatus.RUNNING;
+        return Status.RUNNING;
     }
 
     @Override
-    public boolean shouldExecute() {
-        return ctx.playable() && ctx.spawned() && ctx.puckAlive();
+    public void abort() {
+        skate.reset();
     }
 }

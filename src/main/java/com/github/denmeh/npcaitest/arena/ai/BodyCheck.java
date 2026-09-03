@@ -1,58 +1,46 @@
 package com.github.denmeh.npcaitest.arena.ai;
 
-import net.citizensnpcs.api.ai.tree.BehaviorGoalAdapter;
-import net.citizensnpcs.api.ai.tree.BehaviorStatus;
+import com.github.denmeh.npcaitest.bt.Leaf;
+import com.github.denmeh.npcaitest.bt.Status;
 import org.bukkit.entity.Player;
 
 /**
- * Charges the player while they are carrying the puck and shoves them off it. On a long cooldown on
- * purpose: it is a punctuation mark, not a way to play. The shove moves the player without damaging them.
+ * Charges the player and shoves them off the puck. The shove moves them without damaging them.
+ *
+ * <p>Neither the give-up timer nor the cooldown between checks lives here: both are decorators in
+ * {@link RivalTree}, so this leaf is only the charge itself.
  */
-public final class BodyCheck extends BehaviorGoalAdapter {
+public final class BodyCheck extends Leaf {
 
-    /** Give up rather than chase a player who keeps skating away. */
-    private static final int TIMEOUT_TICKS = 40;
-    private static final double CHARGE_FROM = 5.0;
     private static final double CONTACT = 1.9;
 
     private final RivalContext ctx;
     private final SkateTo skate = new SkateTo();
-    private int ticks;
 
     public BodyCheck(RivalContext ctx) {
+        super("BODY_CHECK");
         this.ctx = ctx;
     }
 
     @Override
-    public void reset() {
-        ticks = 0;
-        skate.reset();
-        ctx.markBodyCheck();
-    }
-
-    @Override
-    public BehaviorStatus run() {
+    public Status tick() {
         Player target = ctx.owner();
-        if (!ctx.playable() || !ctx.spawned() || target == null || !ctx.puckAlive()) {
-            return BehaviorStatus.FAILURE;
+        if (target == null) {
+            return Status.FAILURE;
         }
-        if (++ticks > TIMEOUT_TICKS || !ctx.ownerNearPuck()) {
-            return BehaviorStatus.FAILURE;
-        }
-        ctx.rival().setActiveNode("BODY_CHECK");
         ctx.sprint();
         if (ctx.distanceTo(target.getLocation()) <= CONTACT) {
             ctx.shove(target);
-            return BehaviorStatus.SUCCESS;
+            skate.reset();
+            return Status.SUCCESS;
         }
         skate.moveTo(ctx, target.getLocation());
         ctx.faceOwner();
-        return BehaviorStatus.RUNNING;
+        return Status.RUNNING;
     }
 
     @Override
-    public boolean shouldExecute() {
-        return ctx.playable() && ctx.spawned() && ctx.puckAlive()
-                && ctx.bodyCheckReady() && ctx.playerControlsPuck() && ctx.ownerWithin(CHARGE_FROM);
+    public void abort() {
+        skate.reset();
     }
 }

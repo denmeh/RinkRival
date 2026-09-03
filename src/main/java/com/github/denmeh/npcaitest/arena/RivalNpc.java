@@ -1,17 +1,12 @@
 package com.github.denmeh.npcaitest.arena;
 
-import com.github.denmeh.npcaitest.ai.IdleBehavior;
-import com.github.denmeh.npcaitest.arena.ai.BodyCheck;
-import com.github.denmeh.npcaitest.arena.ai.ChaseToIntercept;
-import com.github.denmeh.npcaitest.arena.ai.GuardNet;
+import com.github.denmeh.npcaitest.ai.BehaviorTreeGoal;
 import com.github.denmeh.npcaitest.arena.ai.RivalContext;
-import com.github.denmeh.npcaitest.arena.ai.StrikeTowardGoal;
+import com.github.denmeh.npcaitest.arena.ai.RivalTree;
 import com.github.denmeh.npcaitest.npc.TestNpc;
 import net.citizensnpcs.api.CitizensAPI;
 import net.citizensnpcs.api.ai.GoalController;
 import net.citizensnpcs.api.ai.NavigatorParameters;
-import net.citizensnpcs.api.ai.tree.Precondition;
-import net.citizensnpcs.api.ai.tree.Sequence;
 import net.citizensnpcs.api.npc.NPC;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
@@ -22,16 +17,6 @@ public final class RivalNpc {
 
     static final String NAME = "Rival";
     private static final float SPEED_MODIFIER = 1.75f;
-
-    /**
-     * Role selection lives here rather than in a {@link net.citizensnpcs.api.ai.tree.Selector}: the goal
-     * controller re-checks priorities every tick and preempts what is running, so a check or a defensive
-     * drop-back can interrupt a chase mid-stride.
-     */
-    private static final int CHECK_PRIORITY = 4;
-    private static final int GUARD_PRIORITY = 3;
-    private static final int ATTACK_PRIORITY = 2;
-    private static final int IDLE_PRIORITY = 1;
 
     private RivalNpc() {
     }
@@ -60,12 +45,7 @@ public final class RivalNpc {
 
         GoalController controller = npc.getDefaultGoalController();
         controller.clear();
-        controller.addBehavior(new BodyCheck(ctx), CHECK_PRIORITY);
-        controller.addBehavior(new GuardNet(ctx), GUARD_PRIORITY);
-        controller.addBehavior(Precondition.wrappingPrecondition(
-                Sequence.createSequence(new ChaseToIntercept(ctx), new StrikeTowardGoal(ctx)),
-                () -> ctx.playable() && ctx.puckAlive()), ATTACK_PRIORITY);
-        controller.addBehavior(new IdleBehavior(rival), IDLE_PRIORITY);
+        controller.addBehavior(new BehaviorTreeGoal(RivalTree.build(ctx), rival::setActiveNode), 1);
         return rival;
     }
 
@@ -79,9 +59,6 @@ public final class RivalNpc {
             npc.getNavigator().cancelNavigation();
         }
         npc.teleport(arena.layout().npcSpawn(), PlayerTeleportEvent.TeleportCause.PLUGIN);
-        if (arena.rival() != null) {
-            arena.rival().setActiveNode("FACEOFF");
-        }
     }
 
     public static void destroy(NPC npc) {
