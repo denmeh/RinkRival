@@ -109,7 +109,7 @@ public final class ArenaService {
         arena.setOriginalBlocks(original);
         kit.equip(player);
         player.teleport(arena.layout().playerSpawn());
-        arena.finishBuild(original, RivalNpc.spawn(ownerId, arena.layout()), spawnPuck(arena.layout()));
+        arena.finishBuild(original, RivalNpc.spawn(arena, kit), spawnPuck(arena.layout()));
         player.sendMessage(ChatColor.GREEN + "Rink ready. Hotbar: KB1, KB2, and Leave on the last slot.");
         player.sendMessage(ChatColor.GRAY + "Left-click the puck. First to 3. Leaving restores inventory, gamemode and location.");
     }

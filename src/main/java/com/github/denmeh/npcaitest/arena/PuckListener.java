@@ -44,6 +44,7 @@ public final class PuckListener implements Listener {
             return;
         }
         turtle.setHealth(turtle.getMaxHealth());
+        turtle.setNoDamageTicks(0);
         Puck.protect(turtle);
     }
 

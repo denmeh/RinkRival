@@ -1,36 +1,55 @@
 package com.github.denmeh.npcaitest.arena;
 
 import com.github.denmeh.npcaitest.ai.IdleBehavior;
+import com.github.denmeh.npcaitest.arena.ai.ChaseToIntercept;
+import com.github.denmeh.npcaitest.arena.ai.RivalContext;
+import com.github.denmeh.npcaitest.arena.ai.StrikeTowardGoal;
 import com.github.denmeh.npcaitest.npc.TestNpc;
 import net.citizensnpcs.api.CitizensAPI;
+import net.citizensnpcs.api.ai.GoalController;
+import net.citizensnpcs.api.ai.NavigatorParameters;
+import net.citizensnpcs.api.ai.tree.Sequence;
 import net.citizensnpcs.api.npc.NPC;
-import net.citizensnpcs.trait.LookClose;
 import org.bukkit.entity.EntityType;
-
-import java.util.UUID;
+import org.bukkit.entity.Player;
+import org.bukkit.inventory.ItemStack;
 
 public final class RivalNpc {
 
     static final String NAME = "Rival";
+    private static final float SPEED_MODIFIER = 1.75f;
 
     private RivalNpc() {
     }
 
-    public static TestNpc spawn(UUID ownerId, ArenaLayout layout) {
+    public static TestNpc spawn(Arena arena, ArenaKit kit) {
         NPC npc = CitizensAPI.getTemporaryNPCRegistry().createNPC(EntityType.PLAYER, NAME);
         npc.data().setPersistent(NPC.Metadata.SHOULD_SAVE, false);
         npc.data().setPersistent(NPC.Metadata.REMOVE_FROM_TABLIST, true);
+        npc.data().set(NPC.Metadata.DAMAGE_OTHERS, true);
         npc.setProtected(true);
-        npc.spawn(layout.npcSpawn());
+        npc.spawn(arena.layout().npcSpawn());
 
-        LookClose lookClose = npc.getOrAddTrait(LookClose.class);
-        lookClose.lookClose(true);
-        lookClose.setRange(32);
+        ItemStack lightStick = kit.knockbackStick(1);
+        ItemStack heavyStick = kit.knockbackStick(2);
+        if (npc.getEntity() instanceof Player player) {
+            player.getInventory().setItem(0, lightStick.clone());
+            player.getInventory().setItem(1, heavyStick.clone());
+            player.getInventory().setItemInMainHand(lightStick.clone());
+            player.setSprinting(true);
+        }
 
-        TestNpc rival = new TestNpc(ownerId, npc);
+        TestNpc rival = new TestNpc(arena.ownerId(), npc);
         rival.setActiveNode("IDLE");
-        npc.getDefaultGoalController().clear();
-        npc.getDefaultGoalController().addBehavior(new IdleBehavior(rival), 1);
+        RivalContext ctx = new RivalContext(arena, rival, lightStick, heavyStick);
+        configureNavigator(npc, ctx);
+
+        GoalController controller = npc.getDefaultGoalController();
+        controller.clear();
+        controller.addBehavior(Sequence.createSequence(
+                new ChaseToIntercept(ctx),
+                new StrikeTowardGoal(ctx)), 2);
+        controller.addBehavior(new IdleBehavior(rival), 1);
         return rival;
     }
 
@@ -46,5 +65,15 @@ public final class RivalNpc {
             npc.despawn();
         }
         npc.destroy();
+    }
+
+    private static void configureNavigator(NPC npc, RivalContext ctx) {
+        NavigatorParameters params = npc.getNavigator().getDefaultParameters();
+        params.speedModifier(SPEED_MODIFIER);
+        params.distanceMargin(0.75);
+        params.pathDistanceMargin(0.5);
+        params.straightLineTargetingDistance(8f);
+        params.range(48f);
+        params.lookAtFunction(navigator -> ctx.lookTarget());
     }
 }

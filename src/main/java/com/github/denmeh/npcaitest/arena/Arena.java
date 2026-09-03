@@ -75,7 +75,7 @@ public final class Arena {
         }
     }
 
-    boolean canScore() {
+    public boolean canScore() {
         return ready && scoreCooldown <= 0;
     }
 

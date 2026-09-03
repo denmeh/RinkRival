@@ -48,7 +48,7 @@ public final class ArenaKit {
         return hasKey(item, stickKey) || hasKey(item, leaveKey);
     }
 
-    private ItemStack knockbackStick(int level) {
+    public ItemStack knockbackStick(int level) {
         ItemStack stick = new ItemStack(Material.STICK);
         ItemMeta meta = stick.getItemMeta();
         if (meta != null) {

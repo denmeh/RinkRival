@@ -1,0 +1,478 @@
+package com.github.denmeh.npcaitest.arena.ai;
+
+import com.github.denmeh.npcaitest.arena.Arena;
+import com.github.denmeh.npcaitest.npc.TestNpc;
+import net.citizensnpcs.api.npc.NPC;
+import org.bukkit.Location;
+import org.bukkit.entity.Player;
+import org.bukkit.entity.Turtle;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.util.BoundingBox;
+import org.bukkit.util.Vector;
+
+import java.util.Random;
+
+public final class RivalContext {
+
+    public static final double STRIKE_RANGE = 2.6;
+    public static final double RETARGET_BLOCKS = 0.6;
+
+    private static final double ATTACK_STANCE = 1.5;
+    private static final double DEFEND_LERP = 0.35;
+    private static final double PLAYABLE_INSET = 2.4;
+    private static final double CORNER_MARGIN = 3.4;
+    private static final double BOARD_MARGIN = 2.6;
+    private static final double ALIGN_DOT = 0.78;
+    private static final double ORBIT_RADIUS = 2.2;
+    private static final double ORBIT_STEP = Math.toRadians(45);
+    private static final double ORBIT_PROGRESS = 0.36;
+    private static final double HEAVY_STICK_DISTANCE = 11.0;
+    private static final double HOP_DISTANCE = 4.0;
+    private static final int HOP_COOLDOWN_TICKS = 12;
+
+    /** A turtle sliding on ice keeps most of its speed each tick; this is the measured-ish decay. */
+    private static final double PUCK_DRAG = 0.96;
+    private static final double PUCK_INSET = 1.0;
+    private static final double MOVING_PUCK_SPEED = 0.08;
+    private static final int PREDICT_MAX_TICKS = 30;
+    private static final int PREDICT_STEP_TICKS = 2;
+    /** Roughly how far the rival covers per tick at speedModifier 1.75, used to solve the intercept. */
+    private static final double RIVAL_TICK_SPEED = 0.3;
+
+    /** Turning at roughly 25 degrees per tick reads as a skater pivoting, not a snapping turret. */
+    private static final double TURN_DEGREES_PER_MS = 0.5;
+    private static final double LOOK_DISTANCE = 6.0;
+
+    private final Arena arena;
+    private final TestNpc rival;
+    private final ItemStack lightStick;
+    private final ItemStack heavyStick;
+    private final Random random = new Random();
+
+    private long nextStrikeAt;
+    private int hopCooldown;
+    private Location lookFocus;
+    private Float lookYaw;
+    private long lastLookMs;
+
+    private double aimLateral;
+    private double shotSpeed = 0.9;
+    private boolean heavyShot;
+    private boolean orbitTheLongWay;
+
+    public RivalContext(Arena arena, TestNpc rival, ItemStack lightStick, ItemStack heavyStick) {
+        this.arena = arena;
+        this.rival = rival;
+        this.lightStick = lightStick;
+        this.heavyStick = heavyStick;
+        planShot();
+    }
+
+    public Arena arena() {
+        return arena;
+    }
+
+    public TestNpc rival() {
+        return rival;
+    }
+
+    public NPC npc() {
+        return rival.npc();
+    }
+
+    public boolean spawned() {
+        return npc().isSpawned() && npc().getEntity() != null;
+    }
+
+    public Turtle puck() {
+        return arena.puck();
+    }
+
+    public boolean puckAlive() {
+        Turtle puck = puck();
+        return puck != null && puck.isValid() && !puck.isDead();
+    }
+
+    public boolean canScore() {
+        return arena.canScore();
+    }
+
+    public boolean inStrikeRange() {
+        if (!spawned() || !puckAlive()) {
+            return false;
+        }
+        return horizontalDistanceSquared(npc().getEntity().getLocation(), puck().getLocation())
+                <= STRIKE_RANGE * STRIKE_RANGE;
+    }
+
+    public boolean linedUp() {
+        return inStrikeRange() && alignment() >= ALIGN_DOT;
+    }
+
+    /** Judged on the predicted puck spot, so the rival commits to defence before the puck arrives. */
+    public boolean defensive() {
+        if (!puckAlive()) {
+            return false;
+        }
+        Location spot = interceptPuckLocation();
+        double y = spot.getY();
+        return horizontalDistanceSquared(spot, ownGoalCenter(y))
+                < horizontalDistanceSquared(spot, opponentGoalCenter(y));
+    }
+
+    public Location intercept() {
+        Location spot = interceptPuckLocation();
+        if (defensive()) {
+            double y = spot.getY();
+            Vector mixed = spot.toVector().multiply(1.0 - DEFEND_LERP)
+                    .add(ownGoalCenter(y).toVector().multiply(DEFEND_LERP));
+            return clampToPlayable(new Location(spot.getWorld(), mixed.getX(), y, mixed.getZ()));
+        }
+        return stancePoint();
+    }
+
+    public boolean puckMoving() {
+        if (!puckAlive()) {
+            return false;
+        }
+        Vector velocity = puck().getVelocity();
+        return Math.hypot(velocity.getX(), velocity.getZ()) >= MOVING_PUCK_SPEED;
+    }
+
+    public String chaseLabel() {
+        if (defensive()) {
+            return puckMoving() ? "DEFEND_LEAD" : "CHASE_DEFEND";
+        }
+        return puckMoving() ? "CHASE_LEAD" : "CHASE_ATTACK";
+    }
+
+    public double distanceTo(Location location) {
+        if (!spawned()) {
+            return Double.MAX_VALUE;
+        }
+        return Math.sqrt(horizontalDistanceSquared(npc().getEntity().getLocation(), location));
+    }
+
+    /**
+     * Earliest point along the puck's slide that the rival can actually reach: step forward through the
+     * predicted path and take the first spot where travel time is no longer than the puck's flight time.
+     */
+    public Location interceptPuckLocation() {
+        Location current = puck().getLocation();
+        if (!spawned() || !puckMoving()) {
+            return current;
+        }
+        Location best = current;
+        for (int ticks = 0; ticks <= PREDICT_MAX_TICKS; ticks += PREDICT_STEP_TICKS) {
+            best = puckAfter(ticks);
+            if (distanceTo(best) / RIVAL_TICK_SPEED <= ticks) {
+                break;
+            }
+        }
+        return best;
+    }
+
+    private Location puckAfter(int ticks) {
+        Location loc = puck().getLocation();
+        Vector velocity = puck().getVelocity().clone();
+        double x = loc.getX();
+        double z = loc.getZ();
+        for (int i = 0; i < ticks; i++) {
+            x += velocity.getX();
+            z += velocity.getZ();
+            velocity.multiply(PUCK_DRAG);
+        }
+        BoundingBox rink = arena.layout().rinkBox();
+        return new Location(loc.getWorld(),
+                clamp(x, rink.getMinX() + PUCK_INSET, rink.getMaxX() - PUCK_INSET),
+                loc.getY(),
+                clamp(z, rink.getMinZ() + PUCK_INSET, rink.getMaxZ() - PUCK_INSET));
+    }
+
+    /** Rolls the next shot: which part of the net, how hard, which stick, which way to skate around. */
+    public void planShot() {
+        aimLateral = (random.nextDouble() - 0.5) * 0.9;
+        shotSpeed = 0.7 + random.nextDouble() * 0.45;
+        boolean far = puckAlive() && horizontalDistanceSquared(puck().getLocation(),
+                opponentGoalCenter(puck().getLocation().getY())) > HEAVY_STICK_DISTANCE * HEAVY_STICK_DISTANCE;
+        heavyShot = random.nextDouble() < 0.2 ? !far : far;
+        orbitTheLongWay = random.nextDouble() < 0.15;
+    }
+
+    /** Where the puck should be sent: a spot inside the player net, or center ice if it is buried in a corner. */
+    public Location aimPoint() {
+        return aimPointFor(puck().getLocation());
+    }
+
+    private Location aimPointFor(Location puckSpot) {
+        if (nearCorner(puckSpot)) {
+            Vector center = arena.layout().rinkBox().getCenter();
+            return new Location(arena.layout().world(), center.getX(), puckSpot.getY(), center.getZ());
+        }
+        BoundingBox goal = arena.layout().playerGoalBox();
+        boolean alongX = goal.getWidthX() >= goal.getWidthZ();
+        double half = (alongX ? goal.getWidthX() : goal.getWidthZ()) / 2.0;
+        double offset = aimLateral * half;
+        Vector center = goal.getCenter();
+        return new Location(arena.layout().world(),
+                center.getX() + (alongX ? offset : 0),
+                puckSpot.getY(),
+                center.getZ() + (alongX ? 0 : offset));
+    }
+
+    /** The spot behind the predicted puck position that lines the rival up to shoot forward. */
+    public Location stancePoint() {
+        Location spot = interceptPuckLocation();
+        Location dest = spot.clone().subtract(shotDirectionFrom(spot).multiply(ATTACK_STANCE));
+        dest.setY(spot.getY());
+        return clampToPlayable(dest);
+    }
+
+    /** Next step of the skate-around, one arc segment at a time so the rival never walks through the puck. */
+    public Location orbitPoint() {
+        Location puckLoc = puck().getLocation();
+        Location npcLoc = npc().getEntity().getLocation();
+        Vector fromPuck = npcLoc.toVector().subtract(puckLoc.toVector());
+        fromPuck.setY(0);
+        if (fromPuck.lengthSquared() < 1.0e-4) {
+            fromPuck = shotDirection().multiply(-1);
+        }
+        fromPuck.normalize();
+
+        Vector behind = shotDirection().multiply(-1);
+        if (Math.acos(clamp(fromPuck.dot(behind), -1.0, 1.0)) <= ORBIT_STEP) {
+            return stancePoint();
+        }
+
+        Vector left = rotateXZ(fromPuck, ORBIT_STEP);
+        Vector right = rotateXZ(fromPuck, -ORBIT_STEP);
+        boolean leftIsShorter = left.dot(behind) >= right.dot(behind);
+        boolean takeLeft = orbitTheLongWay ? !leftIsShorter : leftIsShorter;
+        Location preferred = orbitDestination(puckLoc, takeLeft ? left : right);
+        if (horizontalDistanceSquared(npcLoc, preferred) > ORBIT_PROGRESS) {
+            return preferred;
+        }
+        Location other = orbitDestination(puckLoc, takeLeft ? right : left);
+        return horizontalDistanceSquared(npcLoc, other) > ORBIT_PROGRESS ? other : preferred;
+    }
+
+    public Location puckLookLocation() {
+        Location location = puck().getLocation();
+        location.add(0, 0.25, 0);
+        return location;
+    }
+
+    public Location shotAimLocation() {
+        Location puckLoc = puck().getLocation();
+        Location aim = puckLoc.clone().add(shotDirection().multiply(3.0));
+        aim.setY(puckLoc.getY() + 0.25);
+        return aim;
+    }
+
+    public Location opponentGoalCenter(double y) {
+        return goalCenter(arena.layout().playerGoalBox(), y);
+    }
+
+    public Location ownGoalCenter(double y) {
+        return goalCenter(arena.layout().enemyGoalBox(), y);
+    }
+
+    public boolean strikeReady() {
+        return System.currentTimeMillis() >= nextStrikeAt;
+    }
+
+    public void markStruck() {
+        nextStrikeAt = System.currentTimeMillis() + 380L + random.nextInt(420);
+    }
+
+    public void facePuck() {
+        if (spawned() && puckAlive()) {
+            lookFocus = puckLookLocation();
+            npc().faceLocation(lookTarget());
+        }
+    }
+
+    public void faceShot() {
+        if (spawned() && puckAlive()) {
+            lookFocus = shotAimLocation();
+            npc().faceLocation(lookTarget());
+        }
+    }
+
+    /**
+     * Look point for both our own facing calls and the navigator's lookAtFunction, so the two never fight.
+     * Kept level with the feet: pitch stays flat instead of craning at the sky or the floor.
+     */
+    public Location lookTarget() {
+        Location self = spawned() ? npc().getEntity().getLocation() : npc().getStoredLocation();
+        Location focus = lookFocus != null ? lookFocus : (puckAlive() ? puckLookLocation() : self);
+        long now = System.currentTimeMillis();
+        long elapsed = lastLookMs == 0 ? 50L : Math.min(200L, now - lastLookMs);
+        lastLookMs = now;
+
+        double dx = focus.getX() - self.getX();
+        double dz = focus.getZ() - self.getZ();
+        if (dx * dx + dz * dz > 1.0e-6) {
+            float desired = (float) Math.toDegrees(Math.atan2(-dx, dz));
+            float current = lookYaw == null ? self.getYaw() : lookYaw;
+            float step = (float) (TURN_DEGREES_PER_MS * elapsed);
+            float delta = wrapDegrees(desired - current);
+            lookYaw = current + Math.max(-step, Math.min(step, delta));
+        } else if (lookYaw == null) {
+            lookYaw = self.getYaw();
+        }
+
+        double radians = Math.toRadians(lookYaw);
+        Location target = self.clone().add(-Math.sin(radians) * LOOK_DISTANCE, 0, Math.cos(radians) * LOOK_DISTANCE);
+        target.setY(self.getY());
+        return target;
+    }
+
+    public void tickOrbit() {
+        if (!spawned() || !puckAlive()) {
+            return;
+        }
+        npc().setMoveDestination(orbitPoint());
+        if (npc().getEntity() instanceof Player player) {
+            player.setSprinting(true);
+        }
+        facePuck();
+    }
+
+    public void tickChaseMovement() {
+        if (!(npc().getEntity() instanceof Player player) || !puckAlive()) {
+            return;
+        }
+        player.setSprinting(true);
+        facePuck();
+        if (hopCooldown > 0) {
+            hopCooldown--;
+            return;
+        }
+        double distSq = horizontalDistanceSquared(player.getLocation(), puck().getLocation());
+        if (!player.isOnGround() || nearBoards(player.getLocation())
+                || distSq <= HOP_DISTANCE * HOP_DISTANCE) {
+            return;
+        }
+        Vector hop = puck().getLocation().toVector().subtract(player.getLocation().toVector());
+        hop.setY(0);
+        if (hop.lengthSquared() > 1.0e-4) {
+            hop.normalize().multiply(0.22);
+        }
+        hop.setY(0.42);
+        player.setVelocity(hop);
+        hopCooldown = HOP_COOLDOWN_TICKS;
+    }
+
+    public void ensureStick() {
+        if (npc().getEntity() instanceof Player player) {
+            player.getInventory().setItemInMainHand((heavyShot ? heavyStick : lightStick).clone());
+        }
+    }
+
+    public void hitPuck(Player player) {
+        Turtle puck = puck();
+        Vector shot = shotDirection();
+        double power = heavyShot ? shotSpeed * 1.35 : shotSpeed;
+        ensureStick();
+        faceShot();
+        puck.setNoDamageTicks(0);
+        player.swingMainHand();
+        player.attack(puck);
+        puck.setVelocity(shot.multiply(power).setY(0.06));
+        markStruck();
+    }
+
+    public void cancelNavigation() {
+        NPC npc = npc();
+        if (npc.isSpawned() && npc.getNavigator().isNavigating()) {
+            npc.getNavigator().cancelNavigation();
+        }
+    }
+
+    private double alignment() {
+        if (!spawned() || !puckAlive()) {
+            return -1.0;
+        }
+        Vector toPuck = puck().getLocation().toVector()
+                .subtract(npc().getEntity().getLocation().toVector());
+        toPuck.setY(0);
+        if (toPuck.lengthSquared() < 1.0e-4) {
+            return -1.0;
+        }
+        return toPuck.normalize().dot(shotDirection());
+    }
+
+    private Vector shotDirection() {
+        return shotDirectionFrom(puck().getLocation());
+    }
+
+    private Vector shotDirectionFrom(Location puckSpot) {
+        Vector dir = aimPointFor(puckSpot).toVector().subtract(puckSpot.toVector());
+        dir.setY(0);
+        return dir.lengthSquared() < 1.0e-4 ? new Vector(1, 0, 0) : dir.normalize();
+    }
+
+    private Location orbitDestination(Location puckLoc, Vector direction) {
+        Location dest = puckLoc.clone().add(direction.clone().multiply(ORBIT_RADIUS));
+        dest.setY(puckLoc.getY());
+        return clampToPlayable(dest);
+    }
+
+    private Location goalCenter(BoundingBox box, double y) {
+        Vector center = box.getCenter();
+        return new Location(arena.layout().world(), center.getX(), y, center.getZ());
+    }
+
+    private boolean nearCorner(Location location) {
+        BoundingBox rink = arena.layout().rinkBox();
+        boolean x = location.getX() < rink.getMinX() + CORNER_MARGIN
+                || location.getX() > rink.getMaxX() - CORNER_MARGIN;
+        boolean z = location.getZ() < rink.getMinZ() + CORNER_MARGIN
+                || location.getZ() > rink.getMaxZ() - CORNER_MARGIN;
+        return x && z;
+    }
+
+    private boolean nearBoards(Location location) {
+        BoundingBox rink = arena.layout().rinkBox();
+        return location.getX() < rink.getMinX() + BOARD_MARGIN
+                || location.getX() > rink.getMaxX() - BOARD_MARGIN
+                || location.getZ() < rink.getMinZ() + BOARD_MARGIN
+                || location.getZ() > rink.getMaxZ() - BOARD_MARGIN;
+    }
+
+    private Location clampToPlayable(Location location) {
+        BoundingBox rink = arena.layout().rinkBox();
+        location.setX(clamp(location.getX(), rink.getMinX() + PLAYABLE_INSET, rink.getMaxX() - PLAYABLE_INSET));
+        location.setZ(clamp(location.getZ(), rink.getMinZ() + PLAYABLE_INSET, rink.getMaxZ() - PLAYABLE_INSET));
+        return location;
+    }
+
+    private static Vector rotateXZ(Vector vector, double angle) {
+        double cos = Math.cos(angle);
+        double sin = Math.sin(angle);
+        return new Vector(vector.getX() * cos - vector.getZ() * sin, 0,
+                vector.getX() * sin + vector.getZ() * cos);
+    }
+
+    private static float wrapDegrees(float degrees) {
+        float wrapped = degrees % 360f;
+        if (wrapped >= 180f) {
+            wrapped -= 360f;
+        }
+        if (wrapped < -180f) {
+            wrapped += 360f;
+        }
+        return wrapped;
+    }
+
+    private static double horizontalDistanceSquared(Location a, Location b) {
+        double dx = a.getX() - b.getX();
+        double dz = a.getZ() - b.getZ();
+        return dx * dx + dz * dz;
+    }
+
+    private static double clamp(double value, double min, double max) {
+        return Math.min(max, Math.max(min, value));
+    }
+}
