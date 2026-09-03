@@ -9,11 +9,17 @@ public final class TestNpc {
 
     private final UUID ownerId;
     private final NPC npc;
+    private final String displayName;
     private String activeNode = "NONE";
 
     public TestNpc(UUID ownerId, NPC npc) {
+        this(ownerId, npc, npc.getName());
+    }
+
+    public TestNpc(UUID ownerId, NPC npc, String displayName) {
         this.ownerId = ownerId;
         this.npc = npc;
+        this.displayName = displayName;
     }
 
     public UUID ownerId() {
@@ -22,6 +28,10 @@ public final class TestNpc {
 
     public NPC npc() {
         return npc;
+    }
+
+    public String displayName() {
+        return displayName;
     }
 
     public String activeNode() {

@@ -56,6 +56,10 @@ public final class Arena {
         return rival;
     }
 
+    public String rivalName() {
+        return rival == null ? RivalNpc.NAME : rival.displayName();
+    }
+
     public Turtle puck() {
         return puck;
     }

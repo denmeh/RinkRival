@@ -5,23 +5,23 @@ import com.github.denmeh.npcaitest.bt.Status;
 import org.bukkit.Location;
 
 /**
- * Goalie. Holds the line between his own net and the puck instead of chasing a puck the player is
- * already on, which would just get him walked around.
+ * Steps into the shooting lane when the player is carrying the puck on the attack, instead of chasing
+ * the puck head-on and getting walked around.
  */
-public final class GuardNet extends Leaf {
+public final class BlockLane extends Leaf {
 
     private final RivalContext ctx;
     private final SkateTo skate = new SkateTo();
 
-    public GuardNet(RivalContext ctx) {
-        super("GUARD_NET");
+    public BlockLane(RivalContext ctx) {
+        super("BLOCK_LANE");
         this.ctx = ctx;
     }
 
     @Override
     public Status tick() {
         ctx.sprint();
-        Location target = ctx.goaliePoint();
+        Location target = ctx.lanePoint();
         skate.moveTo(ctx, target);
         SkateBoost.toward(ctx, target);
         ctx.facePuck();

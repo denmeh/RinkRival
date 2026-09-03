@@ -38,20 +38,22 @@ Full write-up with diagrams, including why the stock `Selector` was not enough: 
 - Sets **adventure**
 - Gives **Knockback I / II** sticks in hotbar slots 1–2
 - Puts **Leave Arena** (barrier) in the **last hotbar slot**
-- Spawns a turtle puck and **Rival**, who skates, defends the red half, guards his net, and tries to knock the puck into **your** (blue) net
+- Spawns a turtle puck and a **random rival** (hockey name + dyed leather jersey) who skates, blocks your lane, guards his net, and tries to knock the puck into **your** (blue) net
 
 Left-click the turtle with a stick. Score in the **red** net; Rival scores in the **blue** net; first to 3. Leave with the barrier, `/npctest leave`, or quit: world blocks and your previous state are restored.
 
 A match runs as a small state machine: **faceoff** (3-2-1 countdown, both skaters parked on their dots, puck pinned) → **play** → **celebration** (goal horn, title, sparks out of the net) → faceoff again. A boss bar carries the score. Goals only count during play, and the Rival's whole tree is frozen outside it.
 
-The puck plays like a puck rather than a mob: your hits are scaled up past vanilla knockback, and it **rebounds off the boards** instead of stopping dead against them, since Minecraft entities do not bounce on their own. The bounce planes come from the schematic's open ice, with the net mouths excluded so shots can still go in.
+The puck plays like a puck rather than a mob: your hits are scaled up past vanilla knockback, it **slides with drag**, and it **rebounds off the boards** with separation so it does not stick in the wall. The bounce planes come from the schematic's open ice, with the net mouths excluded so shots can still go in. The rink floor uses **blue ice** (`z` in the schematic) — the slipperiest block, and safer than regular ice which melts near the sea lanterns.
 
 Rival’s tree (registered on spawn, no LookClose). The `Selector` retries from the top every tick, so a branch becoming available interrupts a lower one mid-skate:
 
 ```
 Selector "rival"
 ├── Guard "check"   you are on the puck, he is close, puck out of his reach
-│   └── Cooldown 5.2s → Timeout 40t → BodyCheck
+│   └── Cooldown (by difficulty) → Timeout 40t → BodyCheck
+├── Guard "block"   you are attacking with the puck
+│   └── BlockLane
 ├── Guard "defend"  you are on the puck at his end
 │   └── GuardNet
 ├── Guard "attack"  live play, puck alive
@@ -59,9 +61,9 @@ Selector "rival"
 └── Hold            stand still, including during faceoffs
 ```
 
-`ChaseToIntercept` **leads the puck**: it simulates the slide forward and skates to the first spot it can actually reach, either behind the puck (attack) or between the puck and the red net (defend). `StrikeTowardGoal` circles the puck until it can shoot forward, then swings — unless you are right on top of him, in which case he shoots straight away rather than get stripped. Each shot is re-rolled: a different spot inside your net, different power, and Knockback **I** for close taps or **II** for long clears.
+`ChaseToIntercept` **leads the puck** and calls **`SkateBoost`** each tick so he keeps up with a sprinting player. Within six blocks he swaps to the planned stick (Tap KB1 / Slap KB2) so you can see the choice before he swings. `StrikeTowardGoal` circles until aligned, then swings — unless you are on top of him (shoots immediately) or he is clearing from his own zone (slaps along the boards, no endless orbit).
 
-`GuardNet` and `BodyCheck` are what make him play against *you* rather than against the puck: he stops chasing a puck he cannot win and sits in front of his net instead, and every few seconds he will charge and shove you off it (a velocity shove, so it never damages you).
+`BlockLane`, `GuardNet`, and `BodyCheck` are what make him play against *you*: he cuts off your shot lane, sits in front of his net when you carry the puck at his end, and every few seconds charges to shove you off it (velocity only, no damage).
 
 The rink is pasted in **small batches each tick** (~192 blocks) so the build does not hitch the server. Layout lives in `plugins/NpcAiTest/arena/rink.txt`. Delete that file and reload to reset the bundled **19×33** 1v1 rink (packed/blue ice only — no melting ice or water).
 

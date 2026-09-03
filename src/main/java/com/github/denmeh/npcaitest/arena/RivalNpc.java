@@ -13,16 +13,24 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.inventory.ItemStack;
 
+import java.util.Random;
+
 public final class RivalNpc {
 
+    /** Fallback label when no roster name is available. */
     static final String NAME = "Rival";
-    private static final float SPEED_MODIFIER = 1.75f;
+    private static final float SPEED_MODIFIER = 2.05f;
 
     private RivalNpc() {
     }
 
     public static TestNpc spawn(Arena arena, ArenaKit kit) {
-        NPC npc = CitizensAPI.getTemporaryNPCRegistry().createNPC(EntityType.PLAYER, NAME);
+        return spawn(arena, kit, RivalDifficulty.NORMAL);
+    }
+
+    public static TestNpc spawn(Arena arena, ArenaKit kit, RivalDifficulty difficulty) {
+        RivalRoster.Pick pick = RivalRoster.pick(new Random());
+        NPC npc = CitizensAPI.getTemporaryNPCRegistry().createNPC(EntityType.PLAYER, pick.name());
         npc.data().setPersistent(NPC.Metadata.SHOULD_SAVE, false);
         npc.data().setPersistent(NPC.Metadata.REMOVE_FROM_TABLIST, true);
         npc.data().set(NPC.Metadata.DAMAGE_OTHERS, true);
@@ -35,21 +43,21 @@ public final class RivalNpc {
             player.getInventory().setItem(0, lightStick.clone());
             player.getInventory().setItem(1, heavyStick.clone());
             player.getInventory().setItemInMainHand(lightStick.clone());
+            player.getInventory().setChestplate(pick.jersey());
             player.setSprinting(true);
         }
 
-        TestNpc rival = new TestNpc(arena.ownerId(), npc);
+        TestNpc rival = new TestNpc(arena.ownerId(), npc, pick.name());
         rival.setActiveNode("IDLE");
-        RivalContext ctx = new RivalContext(arena, rival, lightStick, heavyStick);
+        RivalContext ctx = new RivalContext(arena, rival, lightStick, heavyStick, difficulty);
         configureNavigator(npc, ctx);
 
         GoalController controller = npc.getDefaultGoalController();
         controller.clear();
-        controller.addBehavior(new BehaviorTreeGoal(RivalTree.build(ctx), rival::setActiveNode), 1);
+        controller.addBehavior(new BehaviorTreeGoal(RivalTree.build(ctx, difficulty), rival::setActiveNode), 1);
         return rival;
     }
 
-    /** Parks the rival on its faceoff dot and drops whatever it was doing. */
     public static void toFaceoff(Arena arena) {
         NPC npc = arena.npc();
         if (npc == null || !npc.isSpawned()) {

@@ -127,7 +127,7 @@ public final class ArenaService {
         player.teleport(arena.layout().playerSpawn());
         arena.finishBuild(original, RivalNpc.spawn(arena, kit), spawnPuck(arena.layout()));
         arena.hud().attach(player);
-        arena.hud().score(0, 0);
+        arena.hud().score(arena);
         player.sendMessage(ChatColor.GREEN + "Rink ready. Hotbar: KB1, KB2, and Leave on the last slot.");
         player.sendMessage(ChatColor.GRAY + "Left-click the puck. First to 3. Leaving restores inventory, gamemode and location.");
         startFaceoff(arena, player);
@@ -236,21 +236,21 @@ public final class ArenaService {
     }
 
     private void onGoal(Arena arena, boolean playerScored, Player owner) {
-        arena.hud().score(arena.playerScore(), arena.enemyScore());
+        arena.hud().score(arena);
         arena.hud().goal(arena, playerScored, owner);
         if (owner != null) {
             String scorer = playerScored
                     ? ChatColor.AQUA + owner.getName()
-                    : ChatColor.LIGHT_PURPLE + RivalNpc.NAME;
+                    : ChatColor.LIGHT_PURPLE + arena.rivalName();
             owner.sendMessage(ChatColor.GOLD + "Goal! " + scorer + ChatColor.GRAY + "  "
                     + ChatColor.AQUA + arena.playerScore() + ChatColor.GRAY + " - "
                     + ChatColor.LIGHT_PURPLE + arena.enemyScore());
         }
         boolean decided = arena.playerWon() || arena.enemyWon();
         if (decided) {
-            arena.hud().win(owner, arena.playerWon());
+            arena.hud().win(arena, owner, arena.playerWon());
             arena.resetScores();
-            arena.hud().score(0, 0);
+            arena.hud().score(arena);
         }
         arena.enterPhase(Arena.Phase.CELEBRATION, decided ? WIN_CELEBRATION_TICKS : CELEBRATION_TICKS);
     }

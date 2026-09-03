@@ -21,10 +21,13 @@ public final class ChaseToIntercept extends Leaf {
     public Status tick() {
         phase(ctx.chaseLabel());
         ctx.tickChaseMovement();
+        ctx.maybePrepareStick();
         if (ctx.inStrikeRange()) {
             return Status.SUCCESS;
         }
-        skate.moveTo(ctx, ctx.intercept());
+        var target = ctx.intercept();
+        skate.moveTo(ctx, target);
+        SkateBoost.toward(ctx, target);
         return Status.RUNNING;
     }
 

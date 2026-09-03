@@ -1,6 +1,7 @@
 package com.github.denmeh.npcaitest.arena.ai;
 
 import com.github.denmeh.npcaitest.arena.Arena;
+import com.github.denmeh.npcaitest.arena.RivalDifficulty;
 import com.github.denmeh.npcaitest.npc.TestNpc;
 import net.citizensnpcs.api.npc.NPC;
 import org.bukkit.Bukkit;
@@ -30,6 +31,7 @@ public final class RivalContext {
     private static final double ORBIT_STEP = Math.toRadians(45);
     private static final double ORBIT_PROGRESS = 0.36;
     private static final double HEAVY_STICK_DISTANCE = 11.0;
+    private static final double STICK_PREP_RANGE = 6.0;
     private static final double HOP_DISTANCE = 4.0;
     private static final int HOP_COOLDOWN_TICKS = 12;
 
@@ -39,8 +41,10 @@ public final class RivalContext {
     private static final double MOVING_PUCK_SPEED = 0.08;
     private static final int PREDICT_MAX_TICKS = 30;
     private static final int PREDICT_STEP_TICKS = 2;
-    /** Roughly how far the rival covers per tick at speedModifier 1.75, used to solve the intercept. */
-    private static final double RIVAL_TICK_SPEED = 0.3;
+    /** Roughly how far the rival covers per tick at speedModifier 2.05, used to solve the intercept. */
+    private static final double RIVAL_TICK_SPEED = 0.35;
+
+    private final RivalDifficulty difficulty;
 
     /** Turning at roughly 25 degrees per tick reads as a skater pivoting, not a snapping turret. */
     private static final double TURN_DEGREES_PER_MS = 0.5;
@@ -50,6 +54,8 @@ public final class RivalContext {
     private static final double PLAYER_CONTROL_RANGE = 3.6;
     /** How far off the goal line the rival sits when it plays goalie. */
     private static final double GOALIE_DEPTH = 3.2;
+    /** How far up the shooting lane the rival stands when blocking. */
+    private static final double LANE_DEPTH = 4.0;
     private static final double SHOVE_POWER = 0.62;
     private static final double SHOVE_LIFT = 0.34;
     /** With the player breathing down its neck the rival shoots rather than keep circling. */
@@ -73,11 +79,21 @@ public final class RivalContext {
     private boolean orbitTheLongWay;
 
     public RivalContext(Arena arena, TestNpc rival, ItemStack lightStick, ItemStack heavyStick) {
+        this(arena, rival, lightStick, heavyStick, RivalDifficulty.NORMAL);
+    }
+
+    public RivalContext(Arena arena, TestNpc rival, ItemStack lightStick, ItemStack heavyStick,
+            RivalDifficulty difficulty) {
         this.arena = arena;
         this.rival = rival;
         this.lightStick = lightStick;
         this.heavyStick = heavyStick;
+        this.difficulty = difficulty;
         planShot();
+    }
+
+    public RivalDifficulty difficulty() {
+        return difficulty;
     }
 
     public Arena arena() {
@@ -150,6 +166,25 @@ public final class RivalContext {
 
     public boolean pressured() {
         return ownerWithin(PRESSURE_RANGE);
+    }
+
+    /** Player has the puck on the attack: closer to our net than theirs. */
+    public boolean attacking() {
+        return playerControlsPuck() && !defensive();
+    }
+
+    /** Spot on the line puck → player net, a few blocks out — cuts off the shot lane. */
+    public Location lanePoint() {
+        Location puckLoc = puck().getLocation();
+        Location goal = opponentGoalCenter(puckLoc.getY());
+        Vector toGoal = goal.toVector().subtract(puckLoc.toVector());
+        toGoal.setY(0);
+        if (toGoal.lengthSquared() < 1.0e-4) {
+            return clampToPlayable(puckLoc);
+        }
+        Location block = puckLoc.clone().add(toGoal.normalize().multiply(LANE_DEPTH));
+        block.setY(puckLoc.getY());
+        return clampToPlayable(block);
     }
 
     /** Goalie post: on the line from our net out toward the puck, a few blocks off the goal line. */
@@ -280,12 +315,19 @@ public final class RivalContext {
 
     /** Rolls the next shot: which part of the net, how hard, which stick, which way to skate around. */
     public void planShot() {
-        aimLateral = (random.nextDouble() - 0.5) * 0.9;
+        aimLateral = (random.nextDouble() - 0.5) * difficulty.aimVariance();
         shotSpeed = 0.7 + random.nextDouble() * 0.45;
         boolean far = puckAlive() && horizontalDistanceSquared(puck().getLocation(),
                 opponentGoalCenter(puck().getLocation().getY())) > HEAVY_STICK_DISTANCE * HEAVY_STICK_DISTANCE;
-        heavyShot = random.nextDouble() < 0.2 ? !far : far;
+        heavyShot = random.nextDouble() < difficulty.wrongStickChance() ? !far : far;
         orbitTheLongWay = random.nextDouble() < 0.15;
+    }
+
+    /** Swaps to the planned stick once close enough that the player can see it in his hand. */
+    public void maybePrepareStick() {
+        if (puckAlive() && distanceTo(puck().getLocation()) <= STICK_PREP_RANGE) {
+            ensureStick();
+        }
     }
 
     /** Where the puck should be sent: a spot inside the player net, or center ice if it is buried in a corner. */
@@ -295,6 +337,9 @@ public final class RivalContext {
 
     private Location aimPointFor(Location puckSpot) {
         if (nearCorner(puckSpot)) {
+            if (defensive()) {
+                return boardClearPoint(puckSpot);
+            }
             Vector center = arena.layout().rinkBox().getCenter();
             return new Location(arena.layout().world(), center.getX(), puckSpot.getY(), center.getZ());
         }
@@ -518,6 +563,20 @@ public final class RivalContext {
         Vector dir = aimPointFor(puckSpot).toVector().subtract(puckSpot.toVector());
         dir.setY(0);
         return dir.lengthSquared() < 1.0e-4 ? new Vector(1, 0, 0) : dir.normalize();
+    }
+
+    private Location boardClearPoint(Location puckSpot) {
+        BoundingBox rink = arena.layout().rinkBox();
+        double cx = rink.getCenter().getX();
+        double cz = rink.getCenter().getZ();
+        Vector toCenter = new Vector(cx - puckSpot.getX(), 0, cz - puckSpot.getZ());
+        if (toCenter.lengthSquared() < 1.0e-4) {
+            return puckSpot;
+        }
+        toCenter.normalize();
+        Location aim = puckSpot.clone().add(toCenter.multiply(10.0));
+        aim.setY(puckSpot.getY());
+        return aim;
     }
 
     private Location orbitDestination(Location puckLoc, Vector direction) {

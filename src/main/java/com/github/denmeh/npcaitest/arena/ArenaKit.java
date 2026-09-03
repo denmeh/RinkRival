@@ -52,7 +52,9 @@ public final class ArenaKit {
         ItemStack stick = new ItemStack(Material.STICK);
         ItemMeta meta = stick.getItemMeta();
         if (meta != null) {
-            meta.setDisplayName(ChatColor.AQUA + "Puck Stick " + ChatColor.GRAY + "KB " + level);
+            meta.setDisplayName(level == 1
+                    ? ChatColor.AQUA + "Tap Stick" + ChatColor.GRAY + " KB1"
+                    : ChatColor.AQUA + "Slap Stick" + ChatColor.GRAY + " KB2");
             meta.setLore(List.of(ChatColor.DARK_GRAY + "Left-click the puck"));
             meta.addEnchant(Enchantment.KNOCKBACK, level, true);
             meta.addItemFlags(ItemFlag.HIDE_ATTRIBUTES);

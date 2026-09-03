@@ -29,11 +29,14 @@ public final class ArenaHud {
         bar.setVisible(true);
     }
 
-    void score(int playerScore, int enemyScore) {
+    void score(Arena arena) {
+        int playerScore = arena.playerScore();
+        int enemyScore = arena.enemyScore();
+        String rival = arena.rivalName();
         bar.setTitle(ChatColor.AQUA + "You " + ChatColor.BOLD + playerScore
                 + ChatColor.GRAY + "   -   "
                 + ChatColor.LIGHT_PURPLE + ChatColor.BOLD.toString() + enemyScore
-                + ChatColor.LIGHT_PURPLE + " " + RivalNpc.NAME);
+                + ChatColor.LIGHT_PURPLE + " " + rival);
         if (playerScore > enemyScore) {
             bar.setColor(BarColor.BLUE);
         } else if (enemyScore > playerScore) {
@@ -55,9 +58,10 @@ public final class ArenaHud {
         Location at = owner.getLocation();
         owner.playSound(at, Sound.EVENT_RAID_HORN, 1.0f, playerScored ? 0.9f : 0.7f);
         owner.playSound(at, Sound.ENTITY_FIREWORK_ROCKET_BLAST, 0.8f, 1.2f);
+        String rival = arena.rivalName();
         String title = playerScored
                 ? ChatColor.AQUA + "" + ChatColor.BOLD + "GOAL!"
-                : ChatColor.LIGHT_PURPLE + "" + ChatColor.BOLD + RivalNpc.NAME + " SCORES";
+                : ChatColor.LIGHT_PURPLE + "" + ChatColor.BOLD + rival + " SCORES";
         owner.sendTitle(title, ChatColor.GRAY + "" + arena.playerScore() + " - " + arena.enemyScore(),
                 3, 40, 12);
     }
@@ -68,10 +72,11 @@ public final class ArenaHud {
         world.spawnParticle(Particle.FIREWORK, net, 12, 1.4, 1.0, 1.4, 0.08);
     }
 
-    void win(Player owner, boolean playerWon) {
+    void win(Arena arena, Player owner, boolean playerWon) {
         if (owner == null) {
             return;
         }
+        String rival = arena.rivalName();
         Location at = owner.getLocation();
         if (playerWon) {
             owner.playSound(at, Sound.BLOCK_NOTE_BLOCK_BELL, 1.0f, 1.2f);
@@ -80,7 +85,7 @@ public final class ArenaHud {
                     ChatColor.GRAY + "First to " + Arena.WIN_SCORE + " — scores reset", 5, 50, 15);
         } else {
             owner.playSound(at, Sound.BLOCK_ANVIL_LAND, 0.8f, 0.6f);
-            owner.sendTitle(ChatColor.LIGHT_PURPLE + "" + ChatColor.BOLD + RivalNpc.NAME + " WINS",
+            owner.sendTitle(ChatColor.LIGHT_PURPLE + "" + ChatColor.BOLD + rival + " WINS",
                     ChatColor.GRAY + "First to " + Arena.WIN_SCORE + " — scores reset", 5, 50, 15);
         }
     }

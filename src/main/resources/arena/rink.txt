@@ -2,6 +2,11 @@
 # 1v1 size: 19 x 33, 5-wide nets. No melting ice (no water).
 # Edit plugins/NpcAiTest/arena/rink.txt then leave and /npctest arena again.
 #
+# Ice types (gameplay):
+#   z = blue ice   — slipperiest; use for all skate paths (DO NOT swap to regular ice: it melts near light)
+#   i,f = packed ice — foundation under the rink; does not melt
+# Regular ICE block melts near sea lanterns (layer 2), so keep blue/packed ice only.
+#
 # i packed ice  z blue ice
 # w white concrete  q quartz  n light-blue concrete  k red terracotta
 # b blue concrete  r red concrete  m sea lantern

@@ -6,9 +6,6 @@ import org.bukkit.entity.Player;
 
 /**
  * Charges the player and shoves them off the puck. The shove moves them without damaging them.
- *
- * <p>Neither the give-up timer nor the cooldown between checks lives here: both are decorators in
- * {@link RivalTree}, so this leaf is only the charge itself.
  */
 public final class BodyCheck extends Leaf {
 
@@ -35,6 +32,7 @@ public final class BodyCheck extends Leaf {
             return Status.SUCCESS;
         }
         skate.moveTo(ctx, target.getLocation());
+        SkateBoost.toward(ctx, target.getLocation());
         ctx.faceOwner();
         return Status.RUNNING;
     }

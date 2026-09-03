@@ -143,30 +143,35 @@ Built in one place, [RivalTree.java](../src/main/java/com/github/denmeh/npcaites
 flowchart TD
   root["Selector 'rival'"]
   root -->|1| gc["Guard 'check'<br/>you are on the puck, he is close,<br/>puck out of his reach"]
-  root -->|2| gd["Guard 'defend'<br/>you are on the puck at his end"]
-  root -->|3| ga["Guard 'attack'<br/>live play, puck alive"]
-  root -->|4| hold["Hold<br/>stand still"]
+  root -->|2| gb["Guard 'block'<br/>you are attacking with the puck"]
+  root -->|3| gd["Guard 'defend'<br/>you are on the puck at his end"]
+  root -->|4| ga["Guard 'attack'<br/>live play, puck alive"]
+  root -->|5| hold["Hold<br/>stand still"]
 
-  gc --> cd["Cooldown 5.2s"]
+  gc --> cd["Cooldown by difficulty"]
   cd --> to["Timeout 40t"]
   to --> bc["BodyCheck<br/>charge and shove"]
+
+  gb --> bl["BlockLane<br/>cut off shot lane"]
 
   gd --> gn["GuardNet<br/>hold the post"]
 
   ga --> seq["Sequence 'rush'"]
   seq --> chase["ChaseToIntercept<br/>SUCCESS in range"]
-  seq --> strike["StrikeTowardGoal<br/>line up, swing"]
+  seq --> strike["StrikeTowardGoal<br/>line up, swing or clear"]
 ```
 
 | Node | File | Job |
 |---|---|---|
 | `BodyCheck` | [BodyCheck.java](../src/main/java/com/github/denmeh/npcaitest/arena/ai/BodyCheck.java) | Charge the player carrying the puck and shove them off it |
+| `BlockLane` | [BlockLane.java](../src/main/java/com/github/denmeh/npcaitest/arena/ai/BlockLane.java) | Step into the shooting lane when you attack with the puck |
 | `GuardNet` | [GuardNet.java](../src/main/java/com/github/denmeh/npcaitest/arena/ai/GuardNet.java) | Hold the line between his net and the puck |
 | `ChaseToIntercept` | [ChaseToIntercept.java](../src/main/java/com/github/denmeh/npcaitest/arena/ai/ChaseToIntercept.java) | Skate to the attack stance or the defensive block point |
-| `StrikeTowardGoal` | [StrikeTowardGoal.java](../src/main/java/com/github/denmeh/npcaitest/arena/ai/StrikeTowardGoal.java) | Circle into position, then swing |
+| `StrikeTowardGoal` | [StrikeTowardGoal.java](../src/main/java/com/github/denmeh/npcaitest/arena/ai/StrikeTowardGoal.java) | Circle into position, then swing; clears when pinned in his zone |
 | `Hold` | [Hold.java](../src/main/java/com/github/denmeh/npcaitest/arena/ai/Hold.java) | Stand still; the reason the tree never fails |
 | `RivalContext` | [RivalContext.java](../src/main/java/com/github/denmeh/npcaitest/arena/ai/RivalContext.java) | Blackboard: geometry, aiming, look control, shot plan |
 | `SkateTo` | [SkateTo.java](../src/main/java/com/github/denmeh/npcaitest/arena/ai/SkateTo.java) | Shared "path far, steer near" movement, one instance per node |
+| `SkateBoost` | [SkateBoost.java](../src/main/java/com/github/denmeh/npcaitest/arena/ai/SkateBoost.java) | Velocity nudge so the rival keeps up with a sprinting player |
 
 `RivalContext` is deliberately **not** a node. Leaves stay small and readable; all the hockey maths
 lives in one place every leaf can query. That is the blackboard pattern, arrived at by accident.
@@ -180,6 +185,8 @@ until its guard drops it. Every precondition is written once, in the tree.
 The first version of the tree only knew about the puck, which made the Rival feel like a ball machine.
 Two branches fixed that, both keyed on you being near the puck:
 
+- **`BlockLane`** steps into `lanePoint()` — on the line from puck to your net, four blocks out — when
+  you are carrying the puck on the attack. He blocks the lane instead of charging the puck head-on.
 - **`GuardNet`** stops him charging a puck he cannot win. He retreats to `goaliePoint()`, 3.2 blocks off
   his own goal line on the line out toward the predicted puck spot, and waits facing the puck. Its guard
   includes `!inStrikeRange()`, so the moment the puck comes within his reach the branch stands down and
@@ -187,6 +194,9 @@ Two branches fixed that, both keyed on you being near the puck:
 - **`BodyCheck`** charges you and shoves you off the puck. The shove is `setVelocity`, **not**
   `player.attack` — it moves you without touching your health. Its guard also stands down when the puck
   is in his reach, because hitting the puck beats hitting you.
+
+When pinned in his own zone, **`StrikeTowardGoal`** skips the skate-around sooner (20 ticks vs 45), aims
+along the boards out of the corner via `boardClearPoint()`, and reports `CLEAR` instead of `STRIKE`.
 
 There is also a defensive tweak inside `StrikeTowardGoal`: if you are within 3.2 blocks
 (`ctx.pressured()`) he skips the skate-around and shoots immediately, rather than being stripped while
@@ -243,8 +253,24 @@ Details that matter:
   otherwise the target would jitter while the puck sits still.
 - **Horizon**: capped at 30 ticks (1.5 s) so he never commits to an absurd far-future spot.
 
-`RIVAL_TICK_SPEED` (0.3 blocks/tick) is the tuning knob: raise it and he leads the puck further,
-believing he is faster than he is.
+`RIVAL_TICK_SPEED` (0.35 blocks/tick at `speedModifier` 2.05) is the tuning knob: raise it and he leads
+the puck further, believing he is faster than he is.
+
+### SkateBoost (why navigator alone is not enough)
+
+Citizens pathfinding with `speedModifier(2.05)` and `setSprinting(true)` still caps out below a real
+sprinting player. [`SkateBoost`](../src/main/java/com/github/denmeh/npcaitest/arena/ai/SkateBoost.java)
+adds a small horizontal velocity nudge each tick toward the movement target, capped at roughly sprint
+speed. Every travelling leaf calls it after `SkateTo.moveTo()`. Strength scales with
+[`RivalDifficulty`](../src/main/java/com/github/denmeh/npcaitest/arena/RivalDifficulty.java) (defaults to
+`NORMAL` until a UI exists).
+
+### Rink ice (blue ice, not regular ice)
+
+The playing surface in [`rink.txt`](../src/main/resources/arena/rink.txt) uses **`z` = blue ice**, which
+is the slipperiest block in Minecraft. Regular **ICE melts** near light sources; the rink has sea
+lanterns on layer 2, so swapping to translucent ice would eventually melt holes. Packed ice (`i`) is used
+for the foundation underneath.
 
 ### The skate-around ("giro")
 
@@ -350,7 +376,9 @@ feeds it to `TestNpc.setActiveNode`, which `/npctest status` and the action bar 
 | `rival>attack>rush>SKATE_AROUND` | In range but wrong side; circling the puck |
 | `rival>attack>rush>STRIKE` | Lined up; swinging or waiting out the swing cooldown |
 | `rival>defend>GUARD_NET` | You have the puck at his end; he is sitting in front of his net |
+| `rival>block>BLOCK_LANE` | You are attacking; he is cutting off your shooting lane |
 | `rival>check>BODY_CHECK` | Charging you to shove you off the puck |
+| `rival>attack>rush>CLEAR` | Pinned in his zone; slapping the puck out along the boards |
 | `rival>IDLE` | Nothing to play, usually while the puck respawns |
 | `rival>FACEOFF` | Parked on his dot during the countdown |
 
