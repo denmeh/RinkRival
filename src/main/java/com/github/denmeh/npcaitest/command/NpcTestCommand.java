@@ -1,7 +1,9 @@
 package com.github.denmeh.npcaitest.command;
 
 import com.github.denmeh.npcaitest.NpcAiTest;
-import com.github.denmeh.npcaitest.arena.ArenaService;
+import com.github.denmeh.npcaitest.arena.ArenaListener;
+import com.github.denmeh.npcaitest.arena.DifficultyMenu;
+import com.github.denmeh.npcaitest.arena.RivalDifficulty;
 import com.github.denmeh.npcaitest.npc.TestNpc;
 import com.github.denmeh.npcaitest.npc.TestNpcService;
 import org.bukkit.ChatColor;
@@ -84,20 +86,16 @@ public final class NpcTestCommand implements TabExecutor {
                 player.sendMessage(ChatColor.GREEN + "Removed your test NPC.");
             }
             case "arena" -> {
-                ArenaService.CreateResult result = plugin.arenas().create(player);
-                switch (result) {
-                    case ALREADY_EXISTS -> player.sendMessage(ChatColor.RED
-                            + "You already have a rink. Use the Leave item or /npctest leave.");
-                    case NO_SCHEMATIC -> player.sendMessage(ChatColor.RED
-                            + "Could not load plugins/NpcAiTest/arena/rink.txt — check the server log.");
-                    case CREATED_OVERLAP -> {
-                        player.sendMessage(ChatColor.GRAY + "Building rink in the background (no lag spike)...");
-                        player.sendMessage(ChatColor.YELLOW
-                                + "Warning: this rink overlaps another player's arena.");
-                    }
-                    case CREATED -> player.sendMessage(ChatColor.GRAY
-                            + "Building rink in the background. You will teleport in when it is ready.");
+                if (args.length < 2) {
+                    DifficultyMenu.open(player);
+                    return true;
                 }
+                RivalDifficulty difficulty = RivalDifficulty.parse(args[1]);
+                if (difficulty == null) {
+                    player.sendMessage(ChatColor.RED + "Use easy, normal, or hard. Or /npctest arena to pick in a menu.");
+                    return true;
+                }
+                ArenaListener.announceCreate(player, plugin.arenas().create(player, difficulty));
             }
             case "unarena", "leave" -> {
                 if (!plugin.arenas().leave(player)) {
@@ -117,6 +115,10 @@ public final class NpcTestCommand implements TabExecutor {
             String prefix = args[0].toLowerCase(Locale.ROOT);
             return SUBCOMMANDS.stream().filter(name -> name.startsWith(prefix)).toList();
         }
+        if (args.length == 2 && args[0].equalsIgnoreCase("arena")) {
+            String prefix = args[1].toLowerCase(Locale.ROOT);
+            return Stream.of("easy", "normal", "hard").filter(name -> name.startsWith(prefix)).toList();
+        }
         return List.of();
     }
 
@@ -126,7 +128,8 @@ public final class NpcTestCommand implements TabExecutor {
         player.sendMessage(ChatColor.GOLD + "/npctest tree" + ChatColor.GRAY + " — FOLLOW vs IDLE behavior tree");
         player.sendMessage(ChatColor.GOLD + "/npctest status" + ChatColor.GRAY + " — print the active node");
         player.sendMessage(ChatColor.GOLD + "/npctest remove" + ChatColor.GRAY + " — despawn it");
-        player.sendMessage(ChatColor.GOLD + "/npctest arena" + ChatColor.GRAY + " — paste an ice rink vs idle Rival");
+        player.sendMessage(ChatColor.GOLD + "/npctest arena" + ChatColor.GRAY + " — pick difficulty, then paste a rink");
+        player.sendMessage(ChatColor.GOLD + "/npctest arena <easy|normal|hard>" + ChatColor.GRAY + " — skip the menu");
         player.sendMessage(ChatColor.GOLD + "/npctest leave" + ChatColor.GRAY + " — restore you and the world (or use the barrier)");
     }
 }

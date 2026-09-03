@@ -5,13 +5,14 @@ import com.github.denmeh.npcaitest.bt.Status;
 import org.bukkit.Location;
 
 /**
- * Goalie. Holds the line between his own net and the puck instead of chasing a puck the player is
- * already on, which would just get him walked around.
+ * Goalie, only while a shot is already coming. Stands off the shot line (see {@code guardGap}) so the
+ * far post is open; no skate-boost, so he is late if you release quickly.
  */
 public final class GuardNet extends Leaf {
 
     private final RivalContext ctx;
     private final SkateTo skate = new SkateTo();
+    private boolean engaged;
 
     public GuardNet(RivalContext ctx) {
         super("GUARD_NET");
@@ -20,10 +21,10 @@ public final class GuardNet extends Leaf {
 
     @Override
     public Status tick() {
+        engaged = true;
         ctx.sprint();
         Location target = ctx.goaliePoint();
         skate.moveTo(ctx, target);
-        SkateBoost.toward(ctx, target);
         ctx.facePuck();
         return Status.RUNNING;
     }
@@ -31,5 +32,9 @@ public final class GuardNet extends Leaf {
     @Override
     public void abort() {
         skate.reset();
+        if (engaged) {
+            engaged = false;
+            ctx.rollLaneCheat();
+        }
     }
 }

@@ -10,7 +10,7 @@ authors: [ denmeh ]
 commands:
   npctest:
     description: Citizens NPC behavior-tree sandbox and ice-rink minigame
-    usage: /npctest <spawn|come|tree|status|remove|arena|leave>
+    usage: /npctest <spawn|come|tree|status|remove|arena [easy|normal|hard]|leave>
     permission: npctest.use
 
 permissions:

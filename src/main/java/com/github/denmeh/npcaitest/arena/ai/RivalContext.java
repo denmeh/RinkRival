@@ -52,10 +52,15 @@ public final class RivalContext {
 
     /** Close enough to the puck that the player counts as carrying it. */
     private static final double PLAYER_CONTROL_RANGE = 3.6;
-    /** How far off the goal line the rival sits when it plays goalie. */
-    private static final double GOALIE_DEPTH = 3.2;
-    /** How far up the shooting lane the rival stands when blocking. */
+    /** How far off the goal line the rival sits when it plays goalie. Close, not a sweeper. */
+    private static final double GOALIE_DEPTH = 2.0;
+    /** How far up the shooting lane the rival stands when shading a rush. */
     private static final double LANE_DEPTH = 4.0;
+    /** Further than this from the puck, shade the lane; closer, go steal it. */
+    private static final double STEAL_RANGE = 6.5;
+    /** Fast enough, and aimed enough at our net, to count as a shot he should try to save. */
+    private static final double SHOT_SPEED = 0.20;
+    private static final double SHOT_DOT = 0.5;
     private static final double SHOVE_POWER = 0.62;
     private static final double SHOVE_LIFT = 0.34;
     /** With the player breathing down its neck the rival shoots rather than keep circling. */
@@ -75,11 +80,12 @@ public final class RivalContext {
 
     private double aimLateral;
     private double shotSpeed = 0.9;
+    private double laneCheat;
     private boolean heavyShot;
     private boolean orbitTheLongWay;
 
     public RivalContext(Arena arena, TestNpc rival, ItemStack lightStick, ItemStack heavyStick) {
-        this(arena, rival, lightStick, heavyStick, RivalDifficulty.NORMAL);
+        this(arena, rival, lightStick, heavyStick, RivalDifficulty.EASY);
     }
 
     public RivalContext(Arena arena, TestNpc rival, ItemStack lightStick, ItemStack heavyStick,
@@ -90,6 +96,19 @@ public final class RivalContext {
         this.heavyStick = heavyStick;
         this.difficulty = difficulty;
         planShot();
+    }
+
+    public boolean stunned() {
+        return arena.stunned();
+    }
+
+    /** Navigator off so vanilla knockback from the stick is not eaten by pathfinding. */
+    public void onChecked() {
+        if (!spawned()) {
+            return;
+        }
+        cancelNavigation();
+        arena.takeCheck(450L, 350L);
     }
 
     public RivalDifficulty difficulty() {
@@ -168,37 +187,70 @@ public final class RivalContext {
         return ownerWithin(PRESSURE_RANGE);
     }
 
-    /** Player has the puck on the attack: closer to our net than theirs. */
+    /** Player is carrying the puck in their own half, skating up ice. */
     public boolean attacking() {
         return playerControlsPuck() && !defensive();
     }
 
-    /** Spot on the line puck → player net, a few blocks out — cuts off the shot lane. */
+    /** Too far to poke-check, so shade the rush instead of chasing it down. */
+    public boolean farFromPuck() {
+        return puckAlive() && distanceTo(puck().getLocation()) > STEAL_RANGE;
+    }
+
+    /**
+     * The puck is already a shot at our net, not a carry. Sitting in the crease only then — camping
+     * the shot line whenever the player has the puck made the net impossible to beat.
+     */
+    public boolean shotOnNet() {
+        if (!puckAlive()) {
+            return false;
+        }
+        Vector velocity = puck().getVelocity();
+        double speed = Math.hypot(velocity.getX(), velocity.getZ());
+        if (speed < SHOT_SPEED) {
+            return false;
+        }
+        Location puckLoc = puck().getLocation();
+        Vector toNet = ownGoalCenter(puckLoc.getY()).toVector().subtract(puckLoc.toVector());
+        toNet.setY(0);
+        if (toNet.lengthSquared() < 1.0e-4) {
+            return true;
+        }
+        Vector dir = new Vector(velocity.getX(), 0, velocity.getZ()).normalize();
+        return dir.dot(toNet.normalize()) >= SHOT_DOT;
+    }
+
+    /** Spot on the line puck → our net, a few blocks out and cheated to one side so the far post is open. */
     public Location lanePoint() {
         Location puckLoc = puck().getLocation();
-        Location goal = opponentGoalCenter(puckLoc.getY());
+        Location goal = ownGoalCenter(puckLoc.getY());
         Vector toGoal = goal.toVector().subtract(puckLoc.toVector());
         toGoal.setY(0);
         if (toGoal.lengthSquared() < 1.0e-4) {
             return clampToPlayable(puckLoc);
         }
-        Location block = puckLoc.clone().add(toGoal.normalize().multiply(LANE_DEPTH));
+        Vector along = toGoal.normalize();
+        Location block = puckLoc.clone().add(along.clone().multiply(LANE_DEPTH));
         block.setY(puckLoc.getY());
-        return clampToPlayable(block);
+        return clampToPlayable(offsetLateral(block, along));
     }
 
-    /** Goalie post: on the line from our net out toward the puck, a few blocks off the goal line. */
+    /**
+     * Goalie post: off our goal line toward the puck <em>as it is now</em>, cheated off the shot line.
+     * Using the current puck instead of the intercept is the reaction delay.
+     */
     public Location goaliePoint() {
-        Location spot = interceptPuckLocation();
+        Location spot = puck().getLocation();
         Location net = ownGoalCenter(spot.getY());
         Vector out = spot.toVector().subtract(net.toVector());
         out.setY(0);
         if (out.lengthSquared() < 1.0e-4) {
             return clampToPlayable(net);
         }
-        Location post = net.clone().add(out.normalize().multiply(GOALIE_DEPTH));
+        Vector along = out.normalize();
+        Location post = net.clone().add(along.clone().multiply(GOALIE_DEPTH));
         post.setY(spot.getY());
-        return clampToPlayable(post);
+        return clampToPlayable(offsetLateral(post, along));
     }
 
     /** A shove, not an attack: knocks the player off the puck without touching their health. */
@@ -287,9 +339,10 @@ public final class RivalContext {
             return current;
         }
         Location best = current;
+        double tickSpeed = RIVAL_TICK_SPEED * Math.max(0.35, difficulty.skateBoostMultiplier());
         for (int ticks = 0; ticks <= PREDICT_MAX_TICKS; ticks += PREDICT_STEP_TICKS) {
             best = puckAfter(ticks);
-            if (distanceTo(best) / RIVAL_TICK_SPEED <= ticks) {
+            if (distanceTo(best) / tickSpeed <= ticks) {
                 break;
             }
         }
@@ -315,12 +368,31 @@ public final class RivalContext {
 
     /** Rolls the next shot: which part of the net, how hard, which stick, which way to skate around. */
     public void planShot() {
-        aimLateral = (random.nextDouble() - 0.5) * difficulty.aimVariance();
+        if (random.nextDouble() < difficulty.missChance()) {
+            aimLateral = (random.nextBoolean() ? 1.0 : -1.0) * (0.85 + random.nextDouble() * 0.4);
+        } else {
+            aimLateral = (random.nextDouble() - 0.5) * difficulty.aimVariance();
+        }
         shotSpeed = 0.7 + random.nextDouble() * 0.45;
         boolean far = puckAlive() && horizontalDistanceSquared(puck().getLocation(),
                 opponentGoalCenter(puck().getLocation().getY())) > HEAVY_STICK_DISTANCE * HEAVY_STICK_DISTANCE;
         heavyShot = random.nextDouble() < difficulty.wrongStickChance() ? !far : far;
         orbitTheLongWay = random.nextDouble() < 0.15;
+        rollLaneCheat();
+    }
+
+    /** Picks a far-post cheat so the next save / lane-shade does not sit on the shot line. */
+    public void rollLaneCheat() {
+        double gap = difficulty.guardGap();
+        if (gap <= 0.05) {
+            laneCheat = 0;
+            return;
+        }
+        double min = gap * 0.35;
+        laneCheat = min + random.nextDouble() * (gap - min);
+        if (random.nextBoolean()) {
+            laneCheat = -laneCheat;
+        }
     }
 
     /** Swaps to the planned stick once close enough that the player can see it in his hand. */
@@ -525,7 +597,7 @@ public final class RivalContext {
     public void hitPuck(Player player) {
         Turtle puck = puck();
         Vector shot = shotDirection();
-        double power = heavyShot ? shotSpeed * 1.35 : shotSpeed;
+        double power = (heavyShot ? shotSpeed * 1.35 : shotSpeed) * difficulty.shotPower();
         ensureStick();
         faceShot();
         puck.setNoDamageTicks(0);
@@ -577,6 +649,17 @@ public final class RivalContext {
         Location aim = puckSpot.clone().add(toCenter.multiply(10.0));
         aim.setY(puckSpot.getY());
         return aim;
+    }
+
+    private Location offsetLateral(Location alongLine, Vector along) {
+        if (Math.abs(laneCheat) < 1.0e-4) {
+            return alongLine;
+        }
+        Vector perp = new Vector(-along.getZ(), 0, along.getX());
+        if (perp.lengthSquared() < 1.0e-4) {
+            return alongLine;
+        }
+        return alongLine.clone().add(perp.normalize().multiply(laneCheat));
     }
 
     private Location orbitDestination(Location puckLoc, Vector direction) {

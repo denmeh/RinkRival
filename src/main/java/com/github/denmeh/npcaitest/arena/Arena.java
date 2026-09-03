@@ -1,5 +1,6 @@
 package com.github.denmeh.npcaitest.arena;
 
+import com.github.denmeh.npcaitest.arena.ai.RivalContext;
 import com.github.denmeh.npcaitest.npc.TestNpc;
 import net.citizensnpcs.api.npc.NPC;
 import org.bukkit.Location;
@@ -18,9 +19,11 @@ public final class Arena {
     private final UUID ownerId;
     private final ArenaLayout layout;
     private final PlayerSnapshot ownerSnapshot;
+    private final RivalDifficulty difficulty;
     private final ArenaHud hud = new ArenaHud();
     private final List<ArenaBuilder.SavedBlock> originalBlocks = new ArrayList<>();
     private TestNpc rival;
+    private RivalContext rivalContext;
     private Turtle puck;
     private BukkitTask worldTask;
     private boolean ready;
@@ -29,11 +32,14 @@ public final class Arena {
     private Phase phase = Phase.BUILDING;
     private int phaseTicks;
     private boolean lastGoalByPlayer;
+    private long stunnedUntil;
+    private long nextPlayerCheckAt;
 
-    Arena(UUID ownerId, ArenaLayout layout, PlayerSnapshot ownerSnapshot) {
+    Arena(UUID ownerId, ArenaLayout layout, PlayerSnapshot ownerSnapshot, RivalDifficulty difficulty) {
         this.ownerId = ownerId;
         this.layout = layout;
         this.ownerSnapshot = ownerSnapshot;
+        this.difficulty = difficulty;
     }
 
     public UUID ownerId() {
@@ -52,8 +58,38 @@ public final class Arena {
         return ready;
     }
 
+    public RivalDifficulty difficulty() {
+        return difficulty;
+    }
+
     public TestNpc rival() {
         return rival;
+    }
+
+    RivalContext rivalContext() {
+        return rivalContext;
+    }
+
+    void setRivalContext(RivalContext rivalContext) {
+        this.rivalContext = rivalContext;
+    }
+
+    public boolean stunned() {
+        return System.currentTimeMillis() < stunnedUntil;
+    }
+
+    boolean playerCheckReady() {
+        return System.currentTimeMillis() >= nextPlayerCheckAt;
+    }
+
+    public void takeCheck(long stunMs, long cooldownMs) {
+        long now = System.currentTimeMillis();
+        stunnedUntil = now + stunMs;
+        nextPlayerCheckAt = now + cooldownMs;
+    }
+
+    void clearStun() {
+        stunnedUntil = 0;
     }
 
     public String rivalName() {

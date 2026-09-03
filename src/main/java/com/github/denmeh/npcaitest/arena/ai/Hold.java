@@ -18,6 +18,11 @@ public final class Hold extends Leaf {
 
     @Override
     public Status tick() {
+        if (ctx.stunned()) {
+            phase("CHECKED");
+            ctx.cancelNavigation();
+            return Status.RUNNING;
+        }
         phase(ctx.playable() ? "IDLE" : "FACEOFF");
         ctx.cancelNavigation();
         return Status.RUNNING;

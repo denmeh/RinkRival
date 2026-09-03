@@ -1,11 +1,13 @@
 package com.github.denmeh.npcaitest.arena;
 
+import net.citizensnpcs.api.event.NPCLeftClickEvent;
 import org.bukkit.ChatColor;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
+import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
@@ -22,6 +24,84 @@ public final class ArenaListener implements Listener {
 
     public ArenaListener(ArenaService arenas) {
         this.arenas = arenas;
+    }
+
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = false)
+    public void onRivalLeftClick(NPCLeftClickEvent event) {
+        arenas.tryPlayerCheck(event.getClicker(), event.getNPC());
+    }
+
+    /**
+     * Keep the stick's knockback. A token of damage is required for vanilla knockback to apply;
+     * health is restored so the rival cannot die. Do not cancel — that eats the hit.
+     */
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = false)
+    public void onRivalMelee(EntityDamageByEntityEvent event) {
+        Arena arena = arenas.arenaOfRival(event.getEntity());
+        if (arena == null) {
+            return;
+        }
+        if (!arena.playing()) {
+            event.setCancelled(true);
+            event.setDamage(0);
+            return;
+        }
+        event.setCancelled(false);
+        event.setDamage(0.01);
+        if (event.getDamager() instanceof Player player && player.getUniqueId().equals(arena.ownerId())) {
+            arenas.tryPlayerCheck(player, arena.npc());
+        }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void afterRivalMelee(EntityDamageByEntityEvent event) {
+        Arena arena = arenas.arenaOfRival(event.getEntity());
+        if (arena == null || !(event.getEntity() instanceof org.bukkit.entity.LivingEntity living)) {
+            return;
+        }
+        double max = living.getMaxHealth();
+        if (living.getHealth() < max) {
+            living.setHealth(max);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = false)
+    public void onRivalHurt(org.bukkit.event.entity.EntityDamageEvent event) {
+        if (event instanceof EntityDamageByEntityEvent) {
+            return;
+        }
+        if (arenas.arenaOfRival(event.getEntity()) == null) {
+            return;
+        }
+        event.setDamage(0);
+    }
+
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onDifficultyPick(InventoryClickEvent event) {
+        if (!(event.getInventory().getHolder() instanceof DifficultyMenu)) {
+            return;
+        }
+        event.setCancelled(true);
+        if (!(event.getWhoClicked() instanceof Player player)) {
+            return;
+        }
+        if (event.getClickedInventory() == null || event.getClickedInventory().getHolder() == null
+                || !(event.getClickedInventory().getHolder() instanceof DifficultyMenu)) {
+            return;
+        }
+        RivalDifficulty difficulty = DifficultyMenu.fromSlot(event.getSlot());
+        if (difficulty == null) {
+            return;
+        }
+        player.closeInventory();
+        announceCreate(player, arenas.create(player, difficulty));
+    }
+
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onDifficultyDrag(org.bukkit.event.inventory.InventoryDragEvent event) {
+        if (event.getInventory().getHolder() instanceof DifficultyMenu) {
+            event.setCancelled(true);
+        }
     }
 
     @EventHandler(priority = EventPriority.HIGH)
@@ -104,5 +184,21 @@ public final class ArenaListener implements Listener {
             return;
         }
         player.sendMessage(ChatColor.GREEN + "Left the rink. Inventory, gamemode and location restored.");
+    }
+
+    public static void announceCreate(Player player, ArenaService.CreateResult result) {
+        switch (result) {
+            case ALREADY_EXISTS -> player.sendMessage(ChatColor.RED
+                    + "You already have a rink. Use the Leave item or /npctest leave.");
+            case NO_SCHEMATIC -> player.sendMessage(ChatColor.RED
+                    + "Could not load plugins/NpcAiTest/arena/rink.txt — check the server log.");
+            case CREATED_OVERLAP -> {
+                player.sendMessage(ChatColor.GRAY + "Building rink in the background (no lag spike)...");
+                player.sendMessage(ChatColor.YELLOW
+                        + "Warning: this rink overlaps another player's arena.");
+            }
+            case CREATED -> player.sendMessage(ChatColor.GRAY
+                    + "Building rink in the background. You will teleport in when it is ready.");
+        }
     }
 }

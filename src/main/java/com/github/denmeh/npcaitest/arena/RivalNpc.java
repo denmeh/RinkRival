@@ -25,7 +25,7 @@ public final class RivalNpc {
     }
 
     public static TestNpc spawn(Arena arena, ArenaKit kit) {
-        return spawn(arena, kit, RivalDifficulty.NORMAL);
+        return spawn(arena, kit, arena.difficulty());
     }
 
     public static TestNpc spawn(Arena arena, ArenaKit kit, RivalDifficulty difficulty) {
@@ -34,7 +34,9 @@ public final class RivalNpc {
         npc.data().setPersistent(NPC.Metadata.SHOULD_SAVE, false);
         npc.data().setPersistent(NPC.Metadata.REMOVE_FROM_TABLIST, true);
         npc.data().set(NPC.Metadata.DAMAGE_OTHERS, true);
-        npc.setProtected(true);
+        npc.data().set(NPC.Metadata.COLLIDABLE, true);
+        // Unprotected so a stick swing keeps vanilla knockback. Damage is zeroed in ArenaListener.
+        npc.setProtected(false);
         npc.spawn(arena.layout().npcSpawn());
 
         ItemStack lightStick = kit.knockbackStick(1);
@@ -50,6 +52,7 @@ public final class RivalNpc {
         TestNpc rival = new TestNpc(arena.ownerId(), npc, pick.name());
         rival.setActiveNode("IDLE");
         RivalContext ctx = new RivalContext(arena, rival, lightStick, heavyStick, difficulty);
+        arena.setRivalContext(ctx);
         configureNavigator(npc, ctx);
 
         GoalController controller = npc.getDefaultGoalController();
@@ -67,6 +70,7 @@ public final class RivalNpc {
             npc.getNavigator().cancelNavigation();
         }
         npc.teleport(arena.layout().npcSpawn(), PlayerTeleportEvent.TeleportCause.PLUGIN);
+        arena.clearStun();
     }
 
     public static void destroy(NPC npc) {

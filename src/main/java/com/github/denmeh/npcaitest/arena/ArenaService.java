@@ -1,6 +1,7 @@
 package com.github.denmeh.npcaitest.arena;
 
 import com.github.denmeh.npcaitest.NpcAiTest;
+import net.citizensnpcs.api.npc.NPC;
 import org.bukkit.ChatColor;
 import org.bukkit.Location;
 import org.bukkit.World;
@@ -46,6 +47,36 @@ public final class ArenaService {
         return byOwner.get(player.getUniqueId());
     }
 
+    /** Pause pathfinding so vanilla stick knockback is not cancelled by the navigator. */
+    public void tryPlayerCheck(Player player, NPC npc) {
+        Arena arena = arenaOf(player);
+        if (arena == null || !arena.playing() || npc == null || arena.npc() == null) {
+            return;
+        }
+        if (!npc.equals(arena.npc()) || !arena.playerCheckReady()) {
+            return;
+        }
+        var ctx = arena.rivalContext();
+        if (ctx == null) {
+            return;
+        }
+        ctx.onChecked();
+    }
+
+    public Arena arenaOfRival(org.bukkit.entity.Entity entity) {
+        if (entity == null) {
+            return null;
+        }
+        for (Arena arena : byOwner.values()) {
+            NPC npc = arena.npc();
+            if (npc != null && npc.isSpawned() && npc.getEntity() != null
+                    && npc.getEntity().getUniqueId().equals(entity.getUniqueId())) {
+                return arena;
+            }
+        }
+        return null;
+    }
+
     public boolean isPuck(org.bukkit.entity.Entity entity) {
         return arenaOfPuck(entity) != null;
     }
@@ -70,7 +101,7 @@ public final class ArenaService {
         plugin.getServer().getScheduler().runTask(plugin, () -> PuckPhysics.boostAfterHit(puck));
     }
 
-    public CreateResult create(Player player) {
+    public CreateResult create(Player player, RivalDifficulty difficulty) {
         if (schematic == null) {
             return CreateResult.NO_SCHEMATIC;
         }
@@ -80,7 +111,7 @@ public final class ArenaService {
         PlayerSnapshot snapshot = PlayerSnapshot.capture(player);
         ArenaLayout layout = ArenaLayout.place(schematic, player);
         boolean overlaps = byOwner.values().stream().anyMatch(arena -> arena.layout().overlaps(layout));
-        Arena arena = new Arena(player.getUniqueId(), layout, snapshot);
+        Arena arena = new Arena(player.getUniqueId(), layout, snapshot, difficulty);
         byOwner.put(player.getUniqueId(), arena);
         BukkitTask paste = ArenaBuilder.paste(plugin, layout, arena::setOriginalBlocks,
                 original -> completeCreate(player.getUniqueId(), layout.world(), original));
@@ -128,8 +159,9 @@ public final class ArenaService {
         arena.finishBuild(original, RivalNpc.spawn(arena, kit), spawnPuck(arena.layout()));
         arena.hud().attach(player);
         arena.hud().score(arena);
-        player.sendMessage(ChatColor.GREEN + "Rink ready. Hotbar: KB1, KB2, and Leave on the last slot.");
-        player.sendMessage(ChatColor.GRAY + "Left-click the puck. First to 3. Leaving restores inventory, gamemode and location.");
+        player.sendMessage(ChatColor.GREEN + "Rink ready. " + ChatColor.YELLOW + arena.difficulty().displayName()
+                + ChatColor.GREEN + "  ·  KB1, KB2, Leave on the last slot.");
+        player.sendMessage(ChatColor.GRAY + "Left-click the puck to shoot, or the rival to body-check. First to 3.");
         startFaceoff(arena, player);
     }
 

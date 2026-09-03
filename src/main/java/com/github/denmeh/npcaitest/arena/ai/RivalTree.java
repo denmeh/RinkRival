@@ -15,9 +15,9 @@ import com.github.denmeh.npcaitest.bt.Timeout;
  * Selector "rival"
  *   Guard "check"   you are on the puck, he is close, puck out of reach
  *     Cooldown → Timeout → BodyCheck
- *   Guard "block"   you are attacking with the puck, puck out of reach
+ *   Guard "block"   you are rushing with the puck and he is too far to steal
  *     BlockLane
- *   Guard "defend"  you are on the puck at his end, puck out of reach
+ *   Guard "defend"  the puck is already a shot at his net
  *     GuardNet
  *   Guard "attack"  live play, puck alive
  *     Sequence "rush" → ChaseToIntercept → StrikeTowardGoal
@@ -44,11 +44,10 @@ public final class RivalTree {
                         new Cooldown(difficulty.checkCooldownMs(),
                                 new Timeout(CHECK_TIMEOUT_TICKS, new BodyCheck(ctx)))),
                 new Guard("block",
-                        () -> live(ctx) && !ctx.inStrikeRange() && ctx.attacking(),
+                        () -> live(ctx) && !ctx.inStrikeRange() && ctx.attacking() && ctx.farFromPuck(),
                         new BlockLane(ctx)),
                 new Guard("defend",
-                        () -> live(ctx) && !ctx.inStrikeRange()
-                                && ctx.playerControlsPuck() && ctx.defensive(),
+                        () -> live(ctx) && !ctx.inStrikeRange() && ctx.shotOnNet(),
                         new GuardNet(ctx)),
                 new Guard("attack",
                         () -> live(ctx),
@@ -57,6 +56,6 @@ public final class RivalTree {
     }
 
     private static boolean live(RivalContext ctx) {
-        return ctx.playable() && ctx.spawned() && ctx.puckAlive();
+        return ctx.playable() && ctx.spawned() && ctx.puckAlive() && !ctx.stunned();
     }
 }
