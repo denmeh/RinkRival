@@ -1,8 +1,6 @@
-# NpcAiTest
+# RinkRival
 
-A Paper/Spigot sandbox for **Citizens NPC AI**, focused on the Citizens **behavior tree** API (`net.citizensnpcs.api.ai.tree`). It is not GOAP. Citizens “Goal” is a priority scheduler; new NPC logic should be `Behavior` nodes composed with `Sequence`, `Selector`, and `IfElse`.
-
-The ice rink is a second test bed: a temporary hockey minigame. **Rival plays with a behavior tree** — a small reactive tree written for this project ([`bt`](src/main/java/com/github/denmeh/npcaitest/bt)) and hosted inside a single Citizens goal, because Citizens' own `Selector` cannot interrupt a running child. You score in the **red** net; Rival scores in the **blue** net.
+1v1 hockey against a NPC.
 
 ## Requirements
 
@@ -14,69 +12,75 @@ The ice rink is a second test bed: a temporary hockey minigame. **Rival plays wi
 mvn package
 ```
 
-Drop `target/NpcAiTest-1.0-SNAPSHOT.jar` into `plugins/` next to Citizens.
+Drop `target/RinkRival-1.0-SNAPSHOT.jar` into `plugins/` next to Citizens. Remove any old `NpcAiTest` jar and data folder (`plugins/NpcAiTest`) so the rink schematic loads from `plugins/RinkRival/`.
 
-## Behavior trees
+## Play
 
-`/npctest spawn` creates a temporary player NPC. `/npctest tree` registers two leaf nodes on `GoalController`:
+`/rink arena` opens a chest menu: **Easy / Normal / Hard**. `/rink arena easy` (or `normal` / `hard`) skips the menu.
 
-| Priority | Node | When it runs |
-|---|---|---|
-| 2 | `FollowPlayerBehavior` | A player is within 12 blocks |
-| 1 | `IdleBehavior` | Otherwise |
+That pastes a packed-ice rink from a text schematic, snapshots your **inventory, gamemode, and location**, then:
 
-Leaves extend `BehaviorGoalAdapter` and return `RUNNING` / `SUCCESS` / `FAILURE`. Pathfinding uses `Navigator.setTarget` once, not every tick.
+- Adventure mode
+- **Tap Stick** (Knockback I) and **Slap Stick** (Knockback II) in slots 1–2
+- **Leave Arena** (barrier) on the last hotbar slot
+- A turtle puck and a **random rival** (hockey name + dyed jersey)
 
-That command still uses Citizens' stock API; the Rival does not. Every precondition on the Rival is a `Guard` node re-checked each tick instead of a `shouldExecute()` consulted once, cooldowns and give-up timers are decorators instead of leaf fields, and the tree reports its own live branch (`rival>defend>GUARD_NET`) to `/npctest status`.
+**Shoot:** left-click the puck. **Check:** left-click the rival — vanilla stick knockback, no extra shove, they cannot die. Leave with the barrier, `/rink leave`, or quit: world blocks and your previous state come back.
 
-Full write-up with diagrams, including why the stock `Selector` was not enough: [docs/behavior-tree.md](docs/behavior-tree.md).
+You shoot the **red** net. He shoots **blue**. First to 3.
 
-## Ice rink
+A match is **faceoff** (3-2-1, both on their dots, puck pinned) → **play** → **celebration** (horn, title, sparks) → faceoff. A boss bar holds the score. Goals and the rival's tree only run during play.
 
-`/npctest arena` pastes a packed-ice rink from a text schematic, snapshots your **inventory, gamemode, and location**, then:
+The puck slides with drag and **rebounds off the boards**. Net mouths are left out of the bounce planes so shots can go in. The floor is **blue ice** (`z` in the schematic) — regular ice would melt next to the sea lanterns.
 
-- Sets **adventure**
-- Gives **Knockback I / II** sticks in hotbar slots 1–2
-- Puts **Leave Arena** (barrier) in the **last hotbar slot**
-- Spawns a turtle puck and a **random rival** (hockey name + dyed leather jersey) who skates, blocks your lane, guards his net, and tries to knock the puck into **your** (blue) net
+## Rival
 
-Left-click the turtle with a stick. Score in the **red** net; Rival scores in the **blue** net; first to 3. Leave with the barrier, `/npctest leave`, or quit: world blocks and your previous state are restored.
-
-A match runs as a small state machine: **faceoff** (3-2-1 countdown, both skaters parked on their dots, puck pinned) → **play** → **celebration** (goal horn, title, sparks out of the net) → faceoff again. A boss bar carries the score. Goals only count during play, and the Rival's whole tree is frozen outside it.
-
-The puck plays like a puck rather than a mob: your hits are scaled up past vanilla knockback, it **slides with drag**, and it **rebounds off the boards** with separation so it does not stick in the wall. The bounce planes come from the schematic's open ice, with the net mouths excluded so shots can still go in. The rink floor uses **blue ice** (`z` in the schematic) — the slipperiest block, and safer than regular ice which melts near the sea lanterns.
-
-Rival’s tree (registered on spawn, no LookClose). The `Selector` retries from the top every tick, so a branch becoming available interrupts a lower one mid-skate:
+The rival is a skater, not a crease-camper. His tree lives in [`bt`](src/main/java/com/github/denmeh/rinkrival/bt) and is ticked by a single Citizens goal, because Citizens' own `Selector` cannot interrupt a running child.
 
 ```
 Selector "rival"
 ├── Guard "check"   you are on the puck, he is close, puck out of his reach
 │   └── Cooldown (by difficulty) → Timeout 40t → BodyCheck
-├── Guard "block"   you are attacking with the puck
+├── Guard "block"   you are rushing with the puck and he is too far to steal
 │   └── BlockLane
-├── Guard "defend"  you are on the puck at his end
+├── Guard "defend"  the puck is already a shot at his net
 │   └── GuardNet
-├── Guard "attack"  live play, puck alive
+├── Guard "attack"  live play, puck alive, not stunned
 │   └── Sequence "rush" → ChaseToIntercept → StrikeTowardGoal
-└── Hold            stand still, including during faceoffs
+└── Hold            stand still (faceoffs) or slide after a check
 ```
 
-`ChaseToIntercept` **leads the puck** and calls **`SkateBoost`** each tick so he keeps up with a sprinting player. Within six blocks he swaps to the planned stick (Tap KB1 / Slap KB2) so you can see the choice before he swings. `StrikeTowardGoal` circles until aligned, then swings — unless you are on top of him (shoots immediately) or he is clearing from his own zone (slaps along the boards, no endless orbit).
+The `Selector` retries from the top every tick, so a higher branch interrupts a chase. `/rink status` prints the live path (`rival>defend>GUARD_NET`).
 
-`BlockLane`, `GuardNet`, and `BodyCheck` are what make him play against *you*: he cuts off your shot lane, sits in front of his net when you carry the puck at his end, and every few seconds charges to shove you off it (velocity only, no damage).
+| Branch | What you see |
+|---|---|
+| `BlockLane` | Shades the rush from a distance, cheated off the shot line |
+| `GuardNet` | Only on an incoming shot. Stands at a post with a far-post hole (`guardGap`). No skate-boost |
+| `Chase` | Leads the puck. In his zone, still tries to steal, leaning a bit toward his net |
+| `BodyCheck` | Charges and shoves **you** (velocity, no damage) |
+| Player check | Your stick's vanilla knockback; his navigator pauses so pathfinding does not eat the hit |
 
-The rink is pasted in **small batches each tick** (~192 blocks) so the build does not hitch the server. Layout lives in `plugins/NpcAiTest/arena/rink.txt`. Delete that file and reload to reset the bundled **19×33** 1v1 rink (packed/blue ice only — no melting ice or water).
+Difficulty scales skate speed, shot power, miss chance, check cooldown, and how wide that far-post gap is. Easy is the leaky goalie; Hard stands tighter and shoots cleaner.
+
+The rink pastes in small batches (~192 blocks/tick). Layout: `plugins/RinkRival/arena/rink.txt`. Delete that file and reload to restore the bundled **19×33** 1v1 rink.
+
+Full tree write-up: [docs/behavior-tree.md](docs/behavior-tree.md).
+
+## Sandbox
+
+`/rink spawn` still creates a throwaway player NPC. `/rink tree` attaches Citizens' stock follow-vs-idle goals. That path uses `BehaviorGoalAdapter` and `shouldExecute()`. The rival does not.
 
 ## Commands
 
 | Command | What it does |
 |---|---|
-| `/npctest spawn [name]` | Temporary Citizens NPC |
-| `/npctest come` | `MoveToGoal` to you |
-| `/npctest tree` | Follow vs idle tree |
-| `/npctest status` | Active node + navigating |
-| `/npctest remove` | Despawn that NPC |
-| `/npctest arena` | Build rink and enter |
-| `/npctest leave` | Exit rink and roll back |
+| `/rink spawn [name]` | Temporary Citizens NPC |
+| `/rink come` | Walk to you once |
+| `/rink tree` | Follow vs idle (Citizens API) |
+| `/rink status` | Active node + navigating |
+| `/rink remove` | Despawn that NPC |
+| `/rink arena` | Difficulty menu, then paste a rink |
+| `/rink arena <easy\|normal\|hard>` | Skip the menu |
+| `/rink leave` | Exit and roll back |
 
-Permission: `npctest.use` (default op).
+Permission: `rinkrival.use` (default op).

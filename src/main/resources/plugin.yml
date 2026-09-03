@@ -1,19 +1,19 @@
-name: NpcAiTest
+name: RinkRival
 version: '${version}'
 
-main: com.github.denmeh.npcaitest.NpcAiTest
+main: com.github.denmeh.rinkrival.RinkRival
 api-version: '1.20'
 depend: [Citizens]
 
 authors: [ denmeh ]
 
 commands:
-  npctest:
-    description: Citizens NPC behavior-tree sandbox and ice-rink minigame
-    usage: /npctest <spawn|come|tree|status|remove|arena [easy|normal|hard]|leave>
-    permission: npctest.use
+  rink:
+    description: 1v1 ice hockey vs a Citizens rival, plus a small NPC sandbox
+    usage: /rink <spawn|come|tree|status|remove|arena [easy|normal|hard]|leave>
+    permission: rinkrival.use
 
 permissions:
-  npctest.use:
-    description: Use /npctest
+  rinkrival.use:
+    description: Use /rink
     default: op
