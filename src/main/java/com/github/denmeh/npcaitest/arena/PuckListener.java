@@ -37,15 +37,21 @@ public final class PuckListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void afterPlayerHit(EntityDamageByEntityEvent event) {
-        if (!(event.getEntity() instanceof Turtle turtle) || !arenas.isPuck(turtle)) {
+        if (!(event.getEntity() instanceof Turtle turtle)) {
             return;
         }
-        if (!(event.getDamager() instanceof Player)) {
+        Arena arena = arenas.arenaOfPuck(turtle);
+        if (arena == null || !(event.getDamager() instanceof Player damager)) {
             return;
         }
         turtle.setHealth(turtle.getMaxHealth());
         turtle.setNoDamageTicks(0);
         Puck.protect(turtle);
+        PuckPhysics.hitEffects(turtle);
+        // The rival sets its own shot speed, so only the player's knockback needs scaling up.
+        if (damager.getUniqueId().equals(arena.ownerId())) {
+            arenas.boostPuckNextTick(turtle);
+        }
     }
 
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)

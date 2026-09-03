@@ -12,12 +12,16 @@ not "Goal-Oriented Action Planning".
 ```mermaid
 flowchart TD
   subgraph scheduler [GoalController: picks ONE thing to run]
+    prio4["priority 4: BodyCheck"]
+    prio3["priority 3: GuardNet"]
     prio2["priority 2: Sequence(chase, strike)"]
     prio1["priority 1: IdleBehavior"]
   end
   subgraph nav [Navigator: pathfinding only]
     path["setTarget(location) then walks over many ticks"]
   end
+  prio4 --> nav
+  prio3 --> nav
   prio2 --> nav
   prio1 --> nav
 ```
@@ -84,34 +88,89 @@ next tick. Two real bugs in this project came from that:
 
 Rule of thumb: **`FAILURE` means "this is impossible now", not "I am not done yet".**
 
+### Why role selection is not a `Selector`
+
+A textbook BT would put the Rival's three roles under a priority `Selector`. Citizens' `Selector` cannot
+do that job, for two reasons worth knowing:
+
+1. **It is not reactive.** It picks a child *once*, then runs it until that child returns `SUCCESS` or
+   `FAILURE`. A chase that stays `RUNNING` for four seconds cannot be interrupted by a role that just
+   became more important.
+2. **Priority selection does not fall through.** `Selectors.PrioritySelection` sorts the children and
+   returns the last one *without consulting `shouldExecute()`*. If that child cannot run, `Selector`
+   returns `FAILURE` for the whole node instead of trying the next-best child. And in 2.0.40
+   `Selectors.prioritySelector` is outright broken: its guard reads `if (behaviors.size() > 0) throw`,
+   so it throws whenever you pass it any behaviors at all.
+
+`GoalController` already *is* a reactive priority selector: it re-checks priorities every tick and
+preempts whatever is running. So roles are registered as priorities, and composites (`Sequence`,
+`Precondition`) are used *within* a role where the reactivity is not needed. Same tree shape, working
+preemption.
+
 ## 4. The Rival's tree
 
 ```mermaid
 flowchart TD
   gc{GoalController each tick}
-  gc -->|priority 2| seq["Sequence"]
-  gc -->|priority 1, fallback| idle["IdleBehavior<br/>stand still"]
+  gc -->|"priority 4<br/>you carry the puck, he is close"| check["BodyCheck<br/>charge and shove"]
+  gc -->|"priority 3<br/>you carry the puck at his end"| guard["GuardNet<br/>play goalie"]
+  gc -->|"priority 2<br/>otherwise"| pre["Precondition<br/>live play and puck alive"]
+  gc -->|"priority 1, fallback"| idle["IdleBehavior<br/>stand still"]
 
+  pre --> seq["Sequence"]
   seq --> chase["ChaseToIntercept"]
   chase -->|"puck gone: FAILURE"| gc
   chase -->|"within 2.6 blocks: SUCCESS"| strike["StrikeTowardGoal"]
 
-  strike -->|"not lined up: RUNNING"| orbit["skate around the puck"]
+  strike -->|"not lined up and not pressured: RUNNING"| orbit["skate around the puck"]
   orbit --> strike
   strike -->|"cooldown: RUNNING"| strike
   strike -->|"hit taken: SUCCESS"| gc
   strike -->|"puck left range: FAILURE"| gc
+
+  check -->|"shoved: SUCCESS"| gc
+  check -->|"40 ticks, no contact: FAILURE"| gc
+  guard -->|"puck within reach: SUCCESS"| gc
+  guard -->|"you lost the puck: FAILURE"| gc
 ```
 
 | Node | File | Job |
 |---|---|---|
+| `BodyCheck` | [BodyCheck.java](../src/main/java/com/github/denmeh/npcaitest/arena/ai/BodyCheck.java) | Charge the player carrying the puck and shove them off it |
+| `GuardNet` | [GuardNet.java](../src/main/java/com/github/denmeh/npcaitest/arena/ai/GuardNet.java) | Drop back onto the line between his net and the puck |
 | `ChaseToIntercept` | [ChaseToIntercept.java](../src/main/java/com/github/denmeh/npcaitest/arena/ai/ChaseToIntercept.java) | Skate to the attack stance or the defensive block point |
 | `StrikeTowardGoal` | [StrikeTowardGoal.java](../src/main/java/com/github/denmeh/npcaitest/arena/ai/StrikeTowardGoal.java) | Circle into position, then swing |
-| `IdleBehavior` | [IdleBehavior.java](../src/main/java/com/github/denmeh/npcaitest/ai/IdleBehavior.java) | Fallback while the puck is respawning |
+| `IdleBehavior` | [IdleBehavior.java](../src/main/java/com/github/denmeh/npcaitest/ai/IdleBehavior.java) | Fallback: puck respawning, or a faceoff freeze |
 | `RivalContext` | [RivalContext.java](../src/main/java/com/github/denmeh/npcaitest/arena/ai/RivalContext.java) | Shared geometry, aiming, look control, shot plan |
+| `SkateTo` | [SkateTo.java](../src/main/java/com/github/denmeh/npcaitest/arena/ai/SkateTo.java) | Shared "path far, steer near" movement, one instance per node |
 
 `RivalContext` is deliberately **not** a node. Leaves stay small and readable; all the hockey maths
-(where to stand, where to aim, how to turn the head) lives in one place both leaves can query.
+(where to stand, where to aim, how to turn the head) lives in one place every leaf can query.
+
+### Contesting the player
+
+The first version of the tree only knew about the puck, which made the Rival feel like a ball machine:
+it never reacted to *you*. Two roles fixed that, both keyed on `playerControlsPuck()` — you are within
+3.6 blocks of the puck **and** closer to it than he is.
+
+- **`GuardNet`** stops him charging a puck he cannot win. He retreats to `goaliePoint()`, 3.2 blocks off
+  his own goal line on the line out toward the predicted puck spot, and waits facing the puck. It stands
+  down (`shouldExecute` false) once the puck is within his reach, otherwise it would keep returning
+  `SUCCESS` on the spot and starve the attack branch that is meant to clear it.
+- **`BodyCheck`** charges you and shoves you off the puck. The shove is `setVelocity`, **not**
+  `player.attack` — it moves you without touching your health. It runs on a ~5 s cooldown started in
+  `reset()`, so a charge that never lands is not retried instantly.
+
+There is also a defensive tweak inside `StrikeTowardGoal`: if you are within 3.2 blocks
+(`ctx.pressured()`) he skips the skate-around and shoots immediately, rather than being stripped while
+fussing over the perfect angle.
+
+### Freezing the tree between plays
+
+Every role checks `ctx.playable()`, which is just `arena.playing()`. During a goal celebration or a
+faceoff countdown that is false, so priorities 4-2 all decline and `IdleBehavior` takes over: the Rival
+stands on his faceoff dot until the puck drops. One flag freezes the whole tree, with no node needing to
+know what a faceoff is.
 
 ### Attack vs defend
 
@@ -188,10 +247,11 @@ Two different movement tools, used for different jobs:
 | `navigator.setTarget(loc)` | Long skate across the rink; real pathfinding | Set it **once per destination**, never every tick |
 | `npc.setMoveDestination(loc)` | Short, precise steering (orbit, closing in) | Straight line, **must** be called every tick |
 
-`ChaseToIntercept` switches between them by distance: beyond 5 blocks it pathfinds (and only re-paths
-when the target moved more than 0.6 blocks, at most every 4 ticks, because a predicted target moves
-constantly); inside 5 blocks it cancels navigation and steers in a straight line, which tracks a
-moving puck far better. `StrikeTowardGoal` always steers directly for the tight circling.
+`SkateTo` implements that switch once and every travelling node uses it: beyond 5 blocks it pathfinds
+(and only re-paths when the target moved more than 0.6 blocks, at most every 4 ticks, because a
+predicted target moves constantly); inside 5 blocks it cancels navigation and steers in a straight
+line, which tracks a moving puck far better. `StrikeTowardGoal` always steers directly for the tight
+circling. Each node owns its own `SkateTo` instance, because the last target is per-node state.
 
 Useful `NavigatorParameters` (see [RivalNpc.java](../src/main/java/com/github/denmeh/npcaitest/arena/RivalNpc.java)):
 
@@ -238,12 +298,22 @@ public final class MyLeaf extends BehaviorGoalAdapter {
 }
 ```
 
-Register it as part of the tree, not as another loose priority:
+Then decide where it belongs. A step *within* an existing role goes into that role's composite; a whole
+new role gets its own priority, above the roles it should be able to interrupt:
 
 ```java
-controller.addBehavior(Sequence.createSequence(new ChaseToIntercept(ctx), new MyLeaf(ctx)), 2);
-controller.addBehavior(new IdleBehavior(rival), 1);
+// a new step inside the attack role
+controller.addBehavior(Precondition.wrappingPrecondition(
+        Sequence.createSequence(new ChaseToIntercept(ctx), new MyLeaf(ctx)),
+        () -> ctx.playable() && ctx.puckAlive()), 2);
+
+// a new role that can preempt attacking
+controller.addBehavior(new MyRole(ctx), 5);
 ```
+
+`Precondition.wrappingPrecondition(child, cond)` is the decorator to reach for when a subtree should be
+skipped wholesale: its `shouldExecute()` is `cond && child.shouldExecute()`. Without it a `Sequence`
+always claims its priority, because `Composite.shouldExecute()` only checks that it *has* children.
 
 ## 7. Debugging
 
@@ -257,6 +327,9 @@ controller.addBehavior(new IdleBehavior(rival), 1);
 | `DEFEND_LEAD` | Cutting off a puck sliding toward the red net |
 | `SKATE_AROUND` | In range but wrong side; circling the puck |
 | `STRIKE` | Lined up; swinging or waiting out the swing cooldown |
+| `GUARD_NET` | You have the puck at his end; he is sitting in front of his net |
+| `BODY_CHECK` | Charging you to shove you off the puck |
+| `FACEOFF` | Parked on his dot during the countdown |
 | `IDLE` | Fallback, usually while the puck respawns |
 
 When behaviour looks wrong, read that label first: it tells you whether the tree picked the wrong node

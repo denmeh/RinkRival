@@ -2,6 +2,7 @@ package com.github.denmeh.npcaitest.arena;
 
 import com.github.denmeh.npcaitest.npc.TestNpc;
 import net.citizensnpcs.api.npc.NPC;
+import org.bukkit.Location;
 import org.bukkit.entity.Turtle;
 import org.bukkit.scheduler.BukkitTask;
 import org.bukkit.util.Vector;
@@ -12,12 +13,12 @@ import java.util.UUID;
 
 public final class Arena {
 
-    static final int WIN_SCORE = 3;
-    static final int SCORE_COOLDOWN_TICKS = 30;
+    public static final int WIN_SCORE = 3;
 
     private final UUID ownerId;
     private final ArenaLayout layout;
     private final PlayerSnapshot ownerSnapshot;
+    private final ArenaHud hud = new ArenaHud();
     private final List<ArenaBuilder.SavedBlock> originalBlocks = new ArrayList<>();
     private TestNpc rival;
     private Turtle puck;
@@ -25,7 +26,9 @@ public final class Arena {
     private boolean ready;
     private int playerScore;
     private int enemyScore;
-    private int scoreCooldown;
+    private Phase phase = Phase.BUILDING;
+    private int phaseTicks;
+    private boolean lastGoalByPlayer;
 
     Arena(UUID ownerId, ArenaLayout layout, PlayerSnapshot ownerSnapshot) {
         this.ownerId = ownerId;
@@ -69,24 +72,51 @@ public final class Arena {
         return puck != null && puck.getUniqueId().equals(entityId);
     }
 
-    void tickCooldown(int ticks) {
-        if (scoreCooldown > 0) {
-            scoreCooldown = Math.max(0, scoreCooldown - ticks);
-        }
+    public ArenaHud hud() {
+        return hud;
     }
 
-    public boolean canScore() {
-        return ready && scoreCooldown <= 0;
+    public Phase phase() {
+        return phase;
+    }
+
+    /**
+     * True only during live play. Goals count and the rival skates; during a celebration or a faceoff
+     * countdown everything holds still.
+     */
+    public boolean playing() {
+        return ready && phase == Phase.PLAYING;
+    }
+
+    void enterPhase(Phase next, int ticks) {
+        this.phase = next;
+        this.phaseTicks = ticks;
+    }
+
+    /** Counts the current phase down by one tick and reports whether it just ran out. */
+    boolean phaseElapsed() {
+        if (phaseTicks > 0) {
+            phaseTicks--;
+        }
+        return phaseTicks <= 0;
+    }
+
+    int phaseTicks() {
+        return phaseTicks;
     }
 
     void playerScored() {
         playerScore++;
-        scoreCooldown = SCORE_COOLDOWN_TICKS;
+        lastGoalByPlayer = true;
     }
 
     void enemyScored() {
         enemyScore++;
-        scoreCooldown = SCORE_COOLDOWN_TICKS;
+        lastGoalByPlayer = false;
+    }
+
+    boolean lastGoalByPlayer() {
+        return lastGoalByPlayer;
     }
 
     boolean playerWon() {
@@ -115,6 +145,19 @@ public final class Arena {
         puck.setFallDistance(0);
     }
 
+    /** Pins the puck on the faceoff dot so a stray bump cannot start the play early. */
+    void holdPuck() {
+        if (puck == null || !puck.isValid()) {
+            return;
+        }
+        Location dot = layout.puckSpawn();
+        if (puck.getLocation().distanceSquared(dot) > 0.25) {
+            puck.teleport(dot);
+        }
+        puck.setVelocity(new Vector());
+        puck.setFallDistance(0);
+    }
+
     void setWorldTask(BukkitTask worldTask) {
         this.worldTask = worldTask;
     }
@@ -133,6 +176,13 @@ public final class Arena {
         this.puck = puck;
         this.ready = true;
         this.worldTask = null;
+    }
+
+    public enum Phase {
+        BUILDING,
+        FACEOFF,
+        PLAYING,
+        CELEBRATION
     }
 
     void setOriginalBlocks(List<ArenaBuilder.SavedBlock> original) {

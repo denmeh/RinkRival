@@ -16,6 +16,11 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class ArenaService {
 
     private static final long TICK_PERIOD = 1L;
+    private static final int CELEBRATION_TICKS = 50;
+    private static final int WIN_CELEBRATION_TICKS = 80;
+    /** 60 ticks split into three beats: 3 at the start, then 2, then 1, then the drop. */
+    private static final int FACEOFF_TICKS = 60;
+    private static final int FACEOFF_BEAT = 20;
 
     private final NpcAiTest plugin;
     private final ArenaKit kit;
@@ -42,16 +47,27 @@ public final class ArenaService {
     }
 
     public boolean isPuck(org.bukkit.entity.Entity entity) {
+        return arenaOfPuck(entity) != null;
+    }
+
+    public Arena arenaOfPuck(org.bukkit.entity.Entity entity) {
         if (!(entity instanceof Turtle turtle)) {
-            return false;
+            return null;
         }
         UUID id = turtle.getUniqueId();
         for (Arena arena : byOwner.values()) {
             if (arena.isPuck(id)) {
-                return true;
+                return arena;
             }
         }
-        return false;
+        return null;
+    }
+
+    /**
+     * Knockback lands after the damage event returns, so the shot is scaled on the following tick.
+     */
+    void boostPuckNextTick(Turtle puck) {
+        plugin.getServer().getScheduler().runTask(plugin, () -> PuckPhysics.boostAfterHit(puck));
     }
 
     public CreateResult create(Player player) {
@@ -110,12 +126,16 @@ public final class ArenaService {
         kit.equip(player);
         player.teleport(arena.layout().playerSpawn());
         arena.finishBuild(original, RivalNpc.spawn(arena, kit), spawnPuck(arena.layout()));
+        arena.hud().attach(player);
+        arena.hud().score(0, 0);
         player.sendMessage(ChatColor.GREEN + "Rink ready. Hotbar: KB1, KB2, and Leave on the last slot.");
         player.sendMessage(ChatColor.GRAY + "Left-click the puck. First to 3. Leaving restores inventory, gamemode and location.");
+        startFaceoff(arena, player);
     }
 
     private void teardown(Arena arena, Player owner, boolean immediate) {
         arena.cancelWorldTask();
+        arena.hud().dispose();
         removePuck(arena.puck());
         RivalNpc.destroy(arena.npc());
         if (immediate) {
@@ -150,51 +170,89 @@ public final class ArenaService {
         if (!arena.ready()) {
             return;
         }
-        arena.tickCooldown((int) TICK_PERIOD);
         Turtle puck = ensurePuck(arena);
         if (puck == null) {
             return;
         }
-        Location location = puck.getLocation();
-        if (arena.canScore()) {
-            if (puck.getBoundingBox().overlaps(arena.layout().enemyGoalBox())) {
-                arena.playerScored();
-                onGoal(arena, true);
-                return;
-            }
-            if (puck.getBoundingBox().overlaps(arena.layout().playerGoalBox())) {
-                arena.enemyScored();
-                onGoal(arena, false);
-                return;
+        Player owner = plugin.getServer().getPlayer(arena.ownerId());
+        switch (arena.phase()) {
+            case PLAYING -> tickPlaying(arena, puck, owner);
+            case CELEBRATION -> tickCelebration(arena, owner);
+            case FACEOFF -> tickFaceoff(arena, owner);
+            default -> {
             }
         }
+    }
+
+    private void tickPlaying(Arena arena, Turtle puck, Player owner) {
+        if (puck.getBoundingBox().overlaps(arena.layout().enemyGoalBox())) {
+            arena.playerScored();
+            onGoal(arena, true, owner);
+            return;
+        }
+        if (puck.getBoundingBox().overlaps(arena.layout().playerGoalBox())) {
+            arena.enemyScored();
+            onGoal(arena, false, owner);
+            return;
+        }
+        PuckPhysics.tick(arena, puck);
+        Location location = puck.getLocation();
         if (!arena.layout().rinkBox().contains(location.getX(), location.getY(), location.getZ())) {
             arena.resetPuck();
         }
     }
 
-    private void onGoal(Arena arena, boolean playerScored) {
-        Player owner = plugin.getServer().getPlayer(arena.ownerId());
-        arena.resetPuck();
-        if (owner == null) {
-            if (arena.playerWon() || arena.enemyWon()) {
-                arena.resetScores();
-            }
+    /** The puck is left sitting in the net while the sparks fly, then the faceoff resets everything. */
+    private void tickCelebration(Arena arena, Player owner) {
+        if (arena.phaseTicks() % 6 == 0) {
+            arena.hud().celebrate(arena, arena.lastGoalByPlayer());
+        }
+        if (arena.phaseElapsed()) {
+            startFaceoff(arena, owner);
+        }
+    }
+
+    private void tickFaceoff(Arena arena, Player owner) {
+        arena.holdPuck();
+        if (arena.phaseElapsed()) {
+            arena.hud().faceoffGo(arena, owner);
+            arena.enterPhase(Arena.Phase.PLAYING, 0);
             return;
         }
-        String scorer = playerScored ? ChatColor.BLUE + owner.getName() : ChatColor.RED + RivalNpc.NAME;
-        owner.sendMessage(ChatColor.GOLD + "Goal! " + scorer + ChatColor.GRAY + "  "
-                + ChatColor.BLUE + arena.playerScore() + ChatColor.GRAY + " - "
-                + ChatColor.RED + arena.enemyScore());
-        if (arena.playerWon()) {
-            owner.sendMessage(ChatColor.GREEN + "You win! First to " + Arena.WIN_SCORE
-                    + ". Scores reset — keep playing or use the Leave item.");
-            arena.resetScores();
-        } else if (arena.enemyWon()) {
-            owner.sendMessage(ChatColor.RED + RivalNpc.NAME + " wins! First to " + Arena.WIN_SCORE
-                    + ". Scores reset — keep playing or use the Leave item.");
-            arena.resetScores();
+        int left = arena.phaseTicks();
+        if (left > 0 && left < FACEOFF_TICKS && left % FACEOFF_BEAT == 0) {
+            arena.hud().faceoffCount(owner, left / FACEOFF_BEAT);
         }
+    }
+
+    private void startFaceoff(Arena arena, Player owner) {
+        arena.resetPuck();
+        RivalNpc.toFaceoff(arena);
+        if (owner != null && owner.isOnline()) {
+            owner.teleport(arena.layout().playerSpawn());
+        }
+        arena.enterPhase(Arena.Phase.FACEOFF, FACEOFF_TICKS);
+        arena.hud().faceoffCount(owner, FACEOFF_TICKS / FACEOFF_BEAT);
+    }
+
+    private void onGoal(Arena arena, boolean playerScored, Player owner) {
+        arena.hud().score(arena.playerScore(), arena.enemyScore());
+        arena.hud().goal(arena, playerScored, owner);
+        if (owner != null) {
+            String scorer = playerScored
+                    ? ChatColor.AQUA + owner.getName()
+                    : ChatColor.LIGHT_PURPLE + RivalNpc.NAME;
+            owner.sendMessage(ChatColor.GOLD + "Goal! " + scorer + ChatColor.GRAY + "  "
+                    + ChatColor.AQUA + arena.playerScore() + ChatColor.GRAY + " - "
+                    + ChatColor.LIGHT_PURPLE + arena.enemyScore());
+        }
+        boolean decided = arena.playerWon() || arena.enemyWon();
+        if (decided) {
+            arena.hud().win(owner, arena.playerWon());
+            arena.resetScores();
+            arena.hud().score(0, 0);
+        }
+        arena.enterPhase(Arena.Phase.CELEBRATION, decided ? WIN_CELEBRATION_TICKS : CELEBRATION_TICKS);
     }
 
     private Turtle ensurePuck(Arena arena) {

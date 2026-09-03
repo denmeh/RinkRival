@@ -17,6 +17,10 @@ import java.util.function.Consumer;
 public final class ArenaLayout {
 
     private static final double GOAL_EXPAND = 0.35;
+    /** Roughly the puck's half width, so a rebound fires just before it touches the boards. */
+    private static final double PUCK_RADIUS = 0.35;
+    /** A puck this close to a net mouth is going in, so the boards must not bounce it back out. */
+    private static final double GOAL_MOUTH_SLACK = 0.6;
 
     private final ArenaSchematic schematic;
     private final World world;
@@ -27,6 +31,7 @@ public final class ArenaLayout {
     private final BoundingBox playerGoalBox;
     private final BoundingBox enemyGoalBox;
     private final BoundingBox rinkBox;
+    private final BoundingBox interiorBox;
 
     private ArenaLayout(ArenaSchematic schematic, World world, BlockFace facing, int originX, int originZ, int floorY) {
         this.schematic = schematic;
@@ -38,6 +43,7 @@ public final class ArenaLayout {
         this.playerGoalBox = unionCells(schematic.playerGoal()).expand(GOAL_EXPAND);
         this.enemyGoalBox = unionCells(schematic.enemyGoal()).expand(GOAL_EXPAND);
         this.rinkBox = unionVoxels().expand(0.25);
+        this.interiorBox = unionOpenIce().expand(-PUCK_RADIUS, 0, -PUCK_RADIUS);
     }
 
     public static ArenaLayout place(ArenaSchematic schematic, Player player) {
@@ -76,6 +82,16 @@ public final class ArenaLayout {
         return rinkBox;
     }
 
+    /** The ice itself, boards excluded: the surface the puck is allowed to slide on. */
+    public BoundingBox interiorBox() {
+        return interiorBox;
+    }
+
+    public boolean nearGoalMouth(double x, double y, double z) {
+        return playerGoalBox.clone().expand(GOAL_MOUTH_SLACK).contains(x, y, z)
+                || enemyGoalBox.clone().expand(GOAL_MOUTH_SLACK).contains(x, y, z);
+    }
+
     public boolean overlaps(ArenaLayout other) {
         if (other == null || world != other.world) {
             return false;
@@ -103,6 +119,36 @@ public final class ArenaLayout {
             throw new IllegalStateException("goal has no cells");
         }
         return box;
+    }
+
+    /**
+     * The open air on the playing layer with the net mouths left out, which is the exact rectangle the puck
+     * may slide in. Derived from the schematic rather than inset by a guess, because the end boards are two
+     * blocks deep while the side boards are one, and which axis is which depends on the placement yaw.
+     */
+    private BoundingBox unionOpenIce() {
+        int playLayer = schematic.puckSpawn().layer();
+        BoundingBox box = null;
+        for (ArenaSchematic.Voxel voxel : schematic.voxels()) {
+            if (voxel.layer() != playLayer || voxel.material() != Material.AIR || isGoalCell(voxel)) {
+                continue;
+            }
+            BoundingBox part = blockBox(localWidth(voxel.col()), voxel.layer(), voxel.row());
+            box = box == null ? part : box.union(part);
+        }
+        if (box == null) {
+            throw new IllegalStateException("schematic has no open ice");
+        }
+        return box;
+    }
+
+    private boolean isGoalCell(ArenaSchematic.Voxel voxel) {
+        return contains(schematic.playerGoal(), voxel) || contains(schematic.enemyGoal(), voxel);
+    }
+
+    private static boolean contains(List<ArenaSchematic.Cell> cells, ArenaSchematic.Voxel voxel) {
+        return cells.stream().anyMatch(cell -> cell.col() == voxel.col()
+                && cell.row() == voxel.row() && cell.layer() == voxel.layer());
     }
 
     private BoundingBox unionVoxels() {

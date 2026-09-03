@@ -3,7 +3,10 @@ package com.github.denmeh.npcaitest.arena.ai;
 import com.github.denmeh.npcaitest.arena.Arena;
 import com.github.denmeh.npcaitest.npc.TestNpc;
 import net.citizensnpcs.api.npc.NPC;
+import org.bukkit.Bukkit;
 import org.bukkit.Location;
+import org.bukkit.Particle;
+import org.bukkit.Sound;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Turtle;
 import org.bukkit.inventory.ItemStack;
@@ -43,6 +46,16 @@ public final class RivalContext {
     private static final double TURN_DEGREES_PER_MS = 0.5;
     private static final double LOOK_DISTANCE = 6.0;
 
+    /** Close enough to the puck that the player counts as carrying it. */
+    private static final double PLAYER_CONTROL_RANGE = 3.6;
+    /** How far off the goal line the rival sits when it plays goalie. */
+    private static final double GOALIE_DEPTH = 3.2;
+    private static final double SHOVE_POWER = 0.62;
+    private static final double SHOVE_LIFT = 0.34;
+    private static final long BODY_CHECK_COOLDOWN_MS = 5200L;
+    /** With the player breathing down its neck the rival shoots rather than keep circling. */
+    private static final double PRESSURE_RANGE = 3.2;
+
     private final Arena arena;
     private final TestNpc rival;
     private final ItemStack lightStick;
@@ -50,6 +63,7 @@ public final class RivalContext {
     private final Random random = new Random();
 
     private long nextStrikeAt;
+    private long nextBodyCheckAt;
     private int hopCooldown;
     private Location lookFocus;
     private Float lookYaw;
@@ -93,8 +107,95 @@ public final class RivalContext {
         return puck != null && puck.isValid() && !puck.isDead();
     }
 
-    public boolean canScore() {
-        return arena.canScore();
+    /** False during a celebration or faceoff countdown, which is how the whole tree gets frozen. */
+    public boolean playable() {
+        return arena.playing();
+    }
+
+    public Player owner() {
+        Player owner = Bukkit.getPlayer(arena.ownerId());
+        if (owner == null || !owner.isOnline() || !owner.getWorld().equals(arena.layout().world())) {
+            return null;
+        }
+        return owner;
+    }
+
+    /** The player is on the puck and nearer to it than the rival is, so charging it head-on would lose. */
+    public boolean playerControlsPuck() {
+        Player owner = owner();
+        if (owner == null || !spawned() || !puckAlive()) {
+            return false;
+        }
+        Location puckLoc = puck().getLocation();
+        double playerDistSq = horizontalDistanceSquared(owner.getLocation(), puckLoc);
+        return playerDistSq <= PLAYER_CONTROL_RANGE * PLAYER_CONTROL_RANGE
+                && playerDistSq < horizontalDistanceSquared(npc().getEntity().getLocation(), puckLoc);
+    }
+
+    public boolean ownerWithin(double blocks) {
+        Player owner = owner();
+        return owner != null && distanceTo(owner.getLocation()) <= blocks;
+    }
+
+    /**
+     * Looser than {@link #playerControlsPuck()}: still true once the rival has closed in and become the
+     * nearest body to the puck, so a charge is not abandoned a step before contact.
+     */
+    public boolean ownerNearPuck() {
+        Player owner = owner();
+        if (owner == null || !puckAlive()) {
+            return false;
+        }
+        double reach = PLAYER_CONTROL_RANGE + 1.0;
+        return horizontalDistanceSquared(owner.getLocation(), puck().getLocation()) <= reach * reach;
+    }
+
+    public boolean pressured() {
+        return ownerWithin(PRESSURE_RANGE);
+    }
+
+    /** Goalie post: on the line from our net out toward the puck, a few blocks off the goal line. */
+    public Location goaliePoint() {
+        Location spot = interceptPuckLocation();
+        Location net = ownGoalCenter(spot.getY());
+        Vector out = spot.toVector().subtract(net.toVector());
+        out.setY(0);
+        if (out.lengthSquared() < 1.0e-4) {
+            return clampToPlayable(net);
+        }
+        Location post = net.clone().add(out.normalize().multiply(GOALIE_DEPTH));
+        post.setY(spot.getY());
+        return clampToPlayable(post);
+    }
+
+    public boolean bodyCheckReady() {
+        return System.currentTimeMillis() >= nextBodyCheckAt;
+    }
+
+    /** Starts the cooldown whether or not the check landed, so a missed charge is not retried instantly. */
+    public void markBodyCheck() {
+        nextBodyCheckAt = System.currentTimeMillis() + BODY_CHECK_COOLDOWN_MS;
+    }
+
+    /** A shove, not an attack: knocks the player off the puck without touching their health. */
+    public void shove(Player target) {
+        markBodyCheck();
+        if (!spawned()) {
+            return;
+        }
+        Vector push = target.getLocation().toVector()
+                .subtract(npc().getEntity().getLocation().toVector());
+        push.setY(0);
+        if (push.lengthSquared() < 1.0e-4) {
+            push = new Vector(0, 0, 1);
+        }
+        push.normalize().multiply(SHOVE_POWER).setY(SHOVE_LIFT);
+        target.setVelocity(target.getVelocity().add(push));
+        if (npc().getEntity() instanceof Player rivalPlayer) {
+            rivalPlayer.swingMainHand();
+        }
+        target.getWorld().playSound(target.getLocation(), Sound.ENTITY_PLAYER_ATTACK_KNOCKBACK, 1.0f, 0.9f);
+        target.getWorld().spawnParticle(Particle.CLOUD, target.getLocation(), 12, 0.3, 0.2, 0.3, 0.02);
     }
 
     public boolean inStrikeRange() {
@@ -299,6 +400,18 @@ public final class RivalContext {
         }
     }
 
+    /** Only used while closing for a hit: staring at the player is right here and wrong everywhere else. */
+    public void faceOwner() {
+        Player owner = owner();
+        if (!spawned() || owner == null) {
+            return;
+        }
+        Location focus = owner.getLocation().clone();
+        focus.setY(npc().getEntity().getLocation().getY());
+        lookFocus = focus;
+        npc().faceLocation(lookTarget());
+    }
+
     /**
      * Look point for both our own facing calls and the navigator's lookAtFunction, so the two never fight.
      * Kept level with the feet: pitch stays flat instead of craning at the sky or the floor.
@@ -326,6 +439,12 @@ public final class RivalContext {
         Location target = self.clone().add(-Math.sin(radians) * LOOK_DISTANCE, 0, Math.cos(radians) * LOOK_DISTANCE);
         target.setY(self.getY());
         return target;
+    }
+
+    public void sprint() {
+        if (spawned() && npc().getEntity() instanceof Player player) {
+            player.setSprinting(true);
+        }
     }
 
     public void tickOrbit() {
