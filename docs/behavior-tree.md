@@ -371,28 +371,10 @@ can interrupt a chase; below means it only runs when nothing more important appl
 
 ## 7. Debugging
 
-The tree reports its own live branch. `BehaviorTreeGoal` calls `Trees.activePath(root)` every tick and
-feeds it to `TestNpc.setActiveNode`, which `/rink status` and the action bar display:
-
-| Path | Meaning |
-|---|---|
-| `rival>attack>rush>CHASE_ATTACK` | Skating behind a settled puck to shoot it |
-| `rival>attack>rush>CHASE_LEAD` | Puck is sliding; skating to the predicted intercept |
-| `rival>attack>rush>CHASE_DEFEND` | Getting between a settled puck and the red net |
-| `rival>attack>rush>DEFEND_LEAD` | Cutting off a puck sliding toward the red net |
-| `rival>attack>rush>SKATE_AROUND` | In range but wrong side; circling the puck |
-| `rival>attack>rush>STRIKE` | Lined up; swinging or waiting out the swing cooldown |
-| `rival>defend>GUARD_NET` | Shot already coming; he is lunging to a cheated post |
-| `rival>block>BLOCK_LANE` | You are rushing; he is shading the lane from a distance |
-| `rival>check>BODY_CHECK` | Charging you to shove you off the puck |
-| `rival>CHECKED` | You just hit him; navigator off so vanilla knockback can land |
-| `rival>attack>rush>CLEAR` | Pinned in his zone; slapping the puck out along the boards |
-| `rival>IDLE` | Nothing to play, usually while the puck respawns |
-| `rival>FACEOFF` | Parked on his dot during the countdown |
-
-This is strictly better than the old hand-written labels: it shows the **whole** branch, so you can see
-*which guard let a node through*, not just which node is live. `Cooldown` and `Timeout` have empty names
-and are skipped, so the path stays readable.
+The tree reports its own live branch. `BehaviorTreeGoal` calls `Trees.activePath(root)` every tick by
+walking `activeChild()` from the root. That is how you see the **whole** branch, not just one leaf:
+which guard let a node through, then which leaf is live. `Cooldown` and `Timeout` have empty names
+and are skipped, so the path stays readable (`rival>defend>GUARD_NET`).
 
 When behaviour looks wrong, read the path first. A wrong node means a guard condition is wrong; the
 right node behaving badly means the leaf is wrong.

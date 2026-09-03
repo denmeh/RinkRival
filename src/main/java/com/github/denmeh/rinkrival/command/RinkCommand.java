@@ -4,8 +4,6 @@ import com.github.denmeh.rinkrival.RinkRival;
 import com.github.denmeh.rinkrival.arena.ArenaListener;
 import com.github.denmeh.rinkrival.arena.DifficultyMenu;
 import com.github.denmeh.rinkrival.arena.RivalDifficulty;
-import com.github.denmeh.rinkrival.npc.TestNpc;
-import com.github.denmeh.rinkrival.npc.TestNpcService;
 import org.bukkit.ChatColor;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
@@ -18,8 +16,7 @@ import java.util.stream.Stream;
 
 public final class RinkCommand implements TabExecutor {
 
-    private static final List<String> SUBCOMMANDS = List.of(
-            "spawn", "come", "tree", "status", "remove", "arena", "unarena", "leave");
+    private static final List<String> SUBCOMMANDS = List.of("arena", "leave");
 
     private final RinkRival plugin;
 
@@ -42,49 +39,7 @@ public final class RinkCommand implements TabExecutor {
             return true;
         }
 
-        TestNpcService npcs = plugin.npcs();
         switch (args[0].toLowerCase(Locale.ROOT)) {
-            case "spawn" -> {
-                String name = args.length >= 2 ? String.join(" ", Stream.of(args).skip(1).toList()) : "Trainee";
-                TestNpc spawned = npcs.spawn(player, name);
-                player.sendMessage(ChatColor.GREEN + "Spawned " + spawned.npc().getName()
-                        + ChatColor.GRAY + ". Next: /rink come  then  /rink tree");
-            }
-            case "come" -> {
-                if (!npcs.come(player)) {
-                    player.sendMessage(ChatColor.RED + "Spawn an NPC first with /rink spawn");
-                    return true;
-                }
-                player.sendMessage(ChatColor.GREEN + "MOVE_TO your location (Citizens Navigator / MoveToGoal).");
-            }
-            case "tree" -> {
-                if (!npcs.attachFollowTree(player)) {
-                    player.sendMessage(ChatColor.RED + "Spawn an NPC first with /rink spawn");
-                    return true;
-                }
-                player.sendMessage(ChatColor.GREEN + "Tree attached: FOLLOW (prio 2) if a player is within "
-                        + (int) TestNpcService.FOLLOW_RANGE + " blocks, else IDLE (prio 1).");
-                player.sendMessage(ChatColor.GRAY + "Walk away past " + (int) TestNpcService.FOLLOW_RANGE
-                        + " blocks to see it drop back to IDLE.");
-            }
-            case "status" -> {
-                TestNpc testNpc = npcs.ownedBy(player);
-                if (testNpc == null) {
-                    player.sendMessage(ChatColor.RED + "No test NPC. /rink spawn");
-                    return true;
-                }
-                player.sendMessage(ChatColor.GOLD + testNpc.npc().getName()
-                        + ChatColor.GRAY + " node=" + ChatColor.YELLOW + testNpc.activeNode()
-                        + ChatColor.GRAY + " navigating=" + testNpc.npc().getNavigator().isNavigating());
-            }
-            case "remove" -> {
-                if (npcs.ownedBy(player) == null) {
-                    player.sendMessage(ChatColor.RED + "No test NPC to remove.");
-                    return true;
-                }
-                npcs.remove(player);
-                player.sendMessage(ChatColor.GREEN + "Removed your test NPC.");
-            }
             case "arena" -> {
                 if (args.length < 2) {
                     DifficultyMenu.open(player);
@@ -97,7 +52,7 @@ public final class RinkCommand implements TabExecutor {
                 }
                 ArenaListener.announceCreate(player, plugin.arenas().create(player, difficulty));
             }
-            case "unarena", "leave" -> {
+            case "leave" -> {
                 if (!plugin.arenas().leave(player)) {
                     player.sendMessage(ChatColor.RED + "No rink to leave. /rink arena first.");
                     return true;
@@ -123,11 +78,6 @@ public final class RinkCommand implements TabExecutor {
     }
 
     private void sendUsage(Player player) {
-        player.sendMessage(ChatColor.GOLD + "/rink spawn [name]" + ChatColor.GRAY + " — create a temporary NPC");
-        player.sendMessage(ChatColor.GOLD + "/rink come" + ChatColor.GRAY + " — walk to you once");
-        player.sendMessage(ChatColor.GOLD + "/rink tree" + ChatColor.GRAY + " — FOLLOW vs IDLE behavior tree");
-        player.sendMessage(ChatColor.GOLD + "/rink status" + ChatColor.GRAY + " — print the active node");
-        player.sendMessage(ChatColor.GOLD + "/rink remove" + ChatColor.GRAY + " — despawn it");
         player.sendMessage(ChatColor.GOLD + "/rink arena" + ChatColor.GRAY + " — pick difficulty, then paste a rink");
         player.sendMessage(ChatColor.GOLD + "/rink arena <easy|normal|hard>" + ChatColor.GRAY + " — skip the menu");
         player.sendMessage(ChatColor.GOLD + "/rink leave" + ChatColor.GRAY + " — restore you and the world (or use the barrier)");

@@ -3,7 +3,6 @@ package com.github.denmeh.rinkrival.arena;
 import com.github.denmeh.rinkrival.ai.BehaviorTreeGoal;
 import com.github.denmeh.rinkrival.arena.ai.RivalContext;
 import com.github.denmeh.rinkrival.arena.ai.RivalTree;
-import com.github.denmeh.rinkrival.npc.TestNpc;
 import net.citizensnpcs.api.CitizensAPI;
 import net.citizensnpcs.api.ai.GoalController;
 import net.citizensnpcs.api.ai.NavigatorParameters;
@@ -24,11 +23,8 @@ public final class RivalNpc {
     private RivalNpc() {
     }
 
-    public static TestNpc spawn(Arena arena, ArenaKit kit) {
-        return spawn(arena, kit, arena.difficulty());
-    }
-
-    public static TestNpc spawn(Arena arena, ArenaKit kit, RivalDifficulty difficulty) {
+    public static NPC spawn(Arena arena, ArenaKit kit) {
+        RivalDifficulty difficulty = arena.difficulty();
         RivalRoster.Pick pick = RivalRoster.pick(new Random());
         NPC npc = CitizensAPI.getTemporaryNPCRegistry().createNPC(EntityType.PLAYER, pick.name());
         npc.data().setPersistent(NPC.Metadata.SHOULD_SAVE, false);
@@ -49,16 +45,14 @@ public final class RivalNpc {
             player.setSprinting(true);
         }
 
-        TestNpc rival = new TestNpc(arena.ownerId(), npc, pick.name());
-        rival.setActiveNode("IDLE");
-        RivalContext ctx = new RivalContext(arena, rival, lightStick, heavyStick, difficulty);
+        RivalContext ctx = new RivalContext(arena, npc, lightStick, heavyStick, difficulty);
         arena.setRivalContext(ctx);
         configureNavigator(npc, ctx);
 
         GoalController controller = npc.getDefaultGoalController();
         controller.clear();
-        controller.addBehavior(new BehaviorTreeGoal(RivalTree.build(ctx, difficulty), rival::setActiveNode), 1);
-        return rival;
+        controller.addBehavior(new BehaviorTreeGoal(RivalTree.build(ctx), ctx::setActivePath), 1);
+        return npc;
     }
 
     public static void toFaceoff(Arena arena) {

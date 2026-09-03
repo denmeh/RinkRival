@@ -33,10 +33,7 @@ public final class RivalTree {
     }
 
     public static Node build(RivalContext ctx) {
-        return build(ctx, ctx.difficulty());
-    }
-
-    public static Node build(RivalContext ctx, RivalDifficulty difficulty) {
+        RivalDifficulty difficulty = ctx.difficulty();
         return new Selector("rival",
                 new Guard("check",
                         () -> live(ctx) && !ctx.inStrikeRange()

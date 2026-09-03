@@ -50,7 +50,7 @@ Selector "rival"
 └── Hold            stand still (faceoffs) or slide after a check
 ```
 
-The `Selector` retries from the top every tick, so a higher branch interrupts a chase. `/rink status` prints the live path (`rival>defend>GUARD_NET`).
+The `Selector` retries from the top every tick, so a higher branch interrupts a chase.
 
 | Branch | What you see |
 |---|---|
@@ -66,19 +66,10 @@ The rink pastes in small batches (~192 blocks/tick). Layout: `plugins/RinkRival/
 
 Full tree write-up: [docs/behavior-tree.md](docs/behavior-tree.md).
 
-## Sandbox
-
-`/rink spawn` still creates a throwaway player NPC. `/rink tree` attaches Citizens' stock follow-vs-idle goals. That path uses `BehaviorGoalAdapter` and `shouldExecute()`. The rival does not.
-
 ## Commands
 
 | Command | What it does |
 |---|---|
-| `/rink spawn [name]` | Temporary Citizens NPC |
-| `/rink come` | Walk to you once |
-| `/rink tree` | Follow vs idle (Citizens API) |
-| `/rink status` | Active node + navigating |
-| `/rink remove` | Despawn that NPC |
 | `/rink arena` | Difficulty menu, then paste a rink |
 | `/rink arena <easy\|normal\|hard>` | Skip the menu |
 | `/rink leave` | Exit and roll back |

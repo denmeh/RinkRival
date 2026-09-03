@@ -4,7 +4,6 @@ import com.github.denmeh.rinkrival.arena.ArenaListener;
 import com.github.denmeh.rinkrival.arena.ArenaService;
 import com.github.denmeh.rinkrival.arena.PuckListener;
 import com.github.denmeh.rinkrival.command.RinkCommand;
-import com.github.denmeh.rinkrival.npc.TestNpcService;
 import net.citizensnpcs.api.CitizensAPI;
 import net.citizensnpcs.api.event.CitizensEnableEvent;
 import org.bukkit.command.PluginCommand;
@@ -17,7 +16,6 @@ import java.util.logging.Level;
 
 public final class RinkRival extends JavaPlugin implements Listener {
 
-    private TestNpcService npcs;
     private ArenaService arenas;
     private boolean citizensReady;
 
@@ -31,7 +29,6 @@ public final class RinkRival extends JavaPlugin implements Listener {
             return;
         }
 
-        npcs = new TestNpcService(this);
         arenas = new ArenaService(this);
         getServer().getPluginManager().registerEvents(this, this);
         getServer().getPluginManager().registerEvents(new PuckListener(arenas), this);
@@ -54,9 +51,6 @@ public final class RinkRival extends JavaPlugin implements Listener {
         if (arenas != null) {
             arenas.leaveAll();
         }
-        if (npcs != null) {
-            npcs.removeAll();
-        }
         citizensReady = false;
     }
 
@@ -70,15 +64,11 @@ public final class RinkRival extends JavaPlugin implements Listener {
             return;
         }
         citizensReady = true;
-        getLogger().info("Citizens API ready. Use /rink spawn");
+        getLogger().info("Citizens API ready. Use /rink arena");
     }
 
     public boolean isCitizensReady() {
         return citizensReady && CitizensAPI.hasImplementation();
-    }
-
-    public TestNpcService npcs() {
-        return npcs;
     }
 
     public ArenaService arenas() {

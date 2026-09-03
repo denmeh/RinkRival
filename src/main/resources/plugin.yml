@@ -9,8 +9,8 @@ authors: [ denmeh ]
 
 commands:
   rink:
-    description: 1v1 ice hockey vs a Citizens rival, plus a small NPC sandbox
-    usage: /rink <spawn|come|tree|status|remove|arena [easy|normal|hard]|leave>
+    description: 1v1 ice hockey vs a Citizens rival
+    usage: /rink <arena [easy|normal|hard]|leave>
     permission: rinkrival.use
 
 permissions:

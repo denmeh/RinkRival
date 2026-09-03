@@ -85,12 +85,4 @@ public final class ArenaKit {
         var pdc = item.getItemMeta().getPersistentDataContainer();
         return pdc.has(key, PersistentDataType.INTEGER) || pdc.has(key, PersistentDataType.BYTE);
     }
-
-    public int stickLevel(ItemStack item) {
-        if (item == null || !item.hasItemMeta()) {
-            return 0;
-        }
-        Integer level = item.getItemMeta().getPersistentDataContainer().get(stickKey, PersistentDataType.INTEGER);
-        return level == null ? 0 : level;
-    }
 }

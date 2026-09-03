@@ -2,7 +2,6 @@ package com.github.denmeh.rinkrival.arena.ai;
 
 import com.github.denmeh.rinkrival.arena.Arena;
 import com.github.denmeh.rinkrival.arena.RivalDifficulty;
-import com.github.denmeh.rinkrival.npc.TestNpc;
 import net.citizensnpcs.api.npc.NPC;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -67,7 +66,7 @@ public final class RivalContext {
     private static final double PRESSURE_RANGE = 3.2;
 
     private final Arena arena;
-    private final TestNpc rival;
+    private final NPC npc;
     private final ItemStack lightStick;
     private final ItemStack heavyStick;
     private final Random random = new Random();
@@ -83,15 +82,12 @@ public final class RivalContext {
     private double laneCheat;
     private boolean heavyShot;
     private boolean orbitTheLongWay;
+    private String activePath = "NONE";
 
-    public RivalContext(Arena arena, TestNpc rival, ItemStack lightStick, ItemStack heavyStick) {
-        this(arena, rival, lightStick, heavyStick, RivalDifficulty.EASY);
-    }
-
-    public RivalContext(Arena arena, TestNpc rival, ItemStack lightStick, ItemStack heavyStick,
+    public RivalContext(Arena arena, NPC npc, ItemStack lightStick, ItemStack heavyStick,
             RivalDifficulty difficulty) {
         this.arena = arena;
-        this.rival = rival;
+        this.npc = npc;
         this.lightStick = lightStick;
         this.heavyStick = heavyStick;
         this.difficulty = difficulty;
@@ -115,16 +111,8 @@ public final class RivalContext {
         return difficulty;
     }
 
-    public Arena arena() {
-        return arena;
-    }
-
-    public TestNpc rival() {
-        return rival;
-    }
-
     public NPC npc() {
-        return rival.npc();
+        return npc;
     }
 
     public boolean spawned() {
@@ -322,6 +310,14 @@ public final class RivalContext {
         return puckMoving() ? "CHASE_LEAD" : "CHASE_ATTACK";
     }
 
+    public void setActivePath(String activePath) {
+        this.activePath = activePath;
+    }
+
+    public String activePath() {
+        return activePath;
+    }
+
     public double distanceTo(Location location) {
         if (!spawned()) {
             return Double.MAX_VALUE;
@@ -403,10 +399,6 @@ public final class RivalContext {
     }
 
     /** Where the puck should be sent: a spot inside the player net, or center ice if it is buried in a corner. */
-    public Location aimPoint() {
-        return aimPointFor(puck().getLocation());
-    }
-
     private Location aimPointFor(Location puckSpot) {
         if (nearCorner(puckSpot)) {
             if (defensive()) {

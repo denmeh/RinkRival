@@ -1,7 +1,6 @@
 package com.github.denmeh.rinkrival.arena;
 
 import com.github.denmeh.rinkrival.arena.ai.RivalContext;
-import com.github.denmeh.rinkrival.npc.TestNpc;
 import net.citizensnpcs.api.npc.NPC;
 import org.bukkit.Location;
 import org.bukkit.entity.Turtle;
@@ -22,7 +21,7 @@ public final class Arena {
     private final RivalDifficulty difficulty;
     private final ArenaHud hud = new ArenaHud();
     private final List<ArenaBuilder.SavedBlock> originalBlocks = new ArrayList<>();
-    private TestNpc rival;
+    private NPC rival;
     private RivalContext rivalContext;
     private Turtle puck;
     private BukkitTask worldTask;
@@ -62,10 +61,6 @@ public final class Arena {
         return difficulty;
     }
 
-    public TestNpc rival() {
-        return rival;
-    }
-
     RivalContext rivalContext() {
         return rivalContext;
     }
@@ -93,7 +88,7 @@ public final class Arena {
     }
 
     public String rivalName() {
-        return rival == null ? RivalNpc.NAME : rival.displayName();
+        return rival == null ? RivalNpc.NAME : rival.getName();
     }
 
     public Turtle puck() {
@@ -209,7 +204,7 @@ public final class Arena {
         }
     }
 
-    void finishBuild(List<ArenaBuilder.SavedBlock> original, TestNpc rival, Turtle puck) {
+    void finishBuild(List<ArenaBuilder.SavedBlock> original, NPC rival, Turtle puck) {
         originalBlocks.clear();
         originalBlocks.addAll(original);
         this.rival = rival;
@@ -235,6 +230,6 @@ public final class Arena {
     }
 
     NPC npc() {
-        return rival == null ? null : rival.npc();
+        return rival;
     }
 }
